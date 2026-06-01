@@ -220,4 +220,5 @@ __marimo__/
 .streamlit/secrets.toml
 
 # MacOS
+.DS_Storedata.json
 .DS_Store
