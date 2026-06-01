@@ -9,25 +9,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  monitor:
+  trigger:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Install Playwright browsers
-        run: playwright install chromium
-
-      - name: Run monitor
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-        run: python main.py
-        timeout-minutes: 10
+      - name: Trigger scrape on Render
+        run: |
+          curl -s -X POST "https://nra_bot.onrender.com/webhook" \
+            -H "Content-Type: application/json" \
+            -d '{"update_id": 1, "message": {"message_id": 1, "from": {"id": ${{ secrets.TELEGRAM_CHAT_ID }}, "is_bot": false, "first_name": "Cron"}, "chat": {"id": ${{ secrets.TELEGRAM_CHAT_ID }}, "type": "private"}, "date": 0, "text": "/scrape"}}'

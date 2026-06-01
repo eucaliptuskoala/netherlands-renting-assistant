@@ -13,6 +13,19 @@ load_dotenv()  # Makes .env variables available to os.environ (on Render env var
 
 import storage  # Our Supabase database layer (save/load/update listings)
 
+# Scraping modules — imported here so the bot can also scrape from Render
+from funda import Funda
+from parariusScraper import Pararius
+
+# --- Scraper configuration (same as main.py) ---
+AREA = "eindhoven"
+PRICE = [400, 1400]
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+}
+
 # --- Logging setup ---
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -163,6 +176,40 @@ async def rejected_listings(update: Update, context):
         )
 
 
+# --- Command: /scrape (triggered by GitHub Actions cron via webhook POST) ---
+
+async def scrape(update: Update, context):
+    """Run all scrapers and save new listings to Supabase. Replies with a summary."""
+    await update.message.reply_text("Scanning rental sites...")
+
+    svcs = [Funda, Pararius]
+    total_new = 0
+    total_checked = 0
+    seen_ids = storage.load_seen_ids()  # IDs already in the database
+
+    for svc_class in svcs:
+        svc = svc_class(AREA, PRICE, header=HEADERS)
+        try:
+            houses = svc.Run()
+        except Exception as e:
+            logger.error("%s error: %s", svc_class.__name__, e)
+            continue
+
+        for house in houses:
+            total_checked += 1
+            listing_id = str(house.id)
+            if listing_id in seen_ids:
+                continue
+            seen_ids.add(listing_id)
+            storage.mark_seen(listing_id, house.address, str(house.price), house.living_area, house.URL)
+            total_new += 1
+
+    msg = f"Done — {total_new} new out of {total_checked} total."
+    if total_new > 0:
+        msg += f" Use /new to view."
+    await update.message.reply_text(msg)
+
+
 # --- Inline button handler (everything goes through here) ---
 
 async def button_callback(update: Update, context):
@@ -284,6 +331,7 @@ def main():
 
     # Command handlers (for typing /start, /new, etc.)
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("scrape", scrape))
     application.add_handler(CommandHandler("new", new_listings))
     application.add_handler(CommandHandler("accepted", accepted_listings))
     application.add_handler(CommandHandler("rejected", rejected_listings))
