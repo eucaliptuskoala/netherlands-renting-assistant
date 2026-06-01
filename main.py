@@ -1,13 +1,22 @@
 import json
+import time
+import sys
+from datetime import datetime
+import os
+
 import requests
 
 from funda import Funda
 from parariusScraper import Pararius
 
-AREA = "amsterdam"
-PRICE = [2000, 3000]
+AREA = "eindhoven"
+PRICE = [400, 1400]
 DATA = 'data.json'
-HEADERS = {}
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+}
 
 def loaddata():
     with open(DATA) as f:
@@ -34,8 +43,8 @@ def process(localdata, houses, callback):
             savedata(localdata)
 
 def sendToTelegram(house):
-    CHATID = ''
-    TOKEN = ''
+    CHATID = os.environ.get('TELEGRAM_CHAT_ID')
+    TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
     URL = 'https://api.telegram.org/bot%s/sendMessage' % TOKEN
 
     body = {'parse_mode': 'Markdown', 'chat_id': CHATID, 'text': '**%s**\n€%s/%s\n%s' % (house.address, house.price, house.living_area, house.URL)}
@@ -47,5 +56,13 @@ if __name__ == '__main__':
         svcs[idx] = svc(AREA, PRICE, header=HEADERS)
 
     data = loaddata()
-    for svc in svcs:
-        process(data, svc.Run(), sendToTelegram) 
+    print(f"[{datetime.now():%H:%M:%S}] Started")
+
+    try:
+        for svc in svcs:
+            print(f"[{datetime.now():%H:%M:%S}] Running {svc.__class__.__name__}...")
+            houses = svc.Run()
+            process(data, houses, sendToTelegram)
+            print(f"  -> {len(houses)} listings checked")
+    except Exception as e:
+        print(f"[{datetime.now():%H:%M:%S}] Error: {e}", file=sys.stderr) 
