@@ -3,6 +3,9 @@ name: Housing Monitor
 on:
   schedule:
     - cron: '*/15 * * * *'
+  push:
+    branches:
+        - master
 
 jobs:
   monitor:
