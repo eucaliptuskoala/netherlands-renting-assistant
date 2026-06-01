@@ -117,17 +117,6 @@ async def button_callback(update: Update, context):
 
 
 def main():
-    resp = requests.get(
-        f"https://api.telegram.org/bot{TOKEN}/setWebhook",
-        params={"url": f"https://{APP_NAME}.onrender.com/webhook"},
-        timeout=10,
-    )
-    if resp.ok:
-        logger.info("Webhook set: %s", resp.json().get("description"))
-    else:
-        logger.error("Failed to set webhook: %s", resp.text)
-        sys.exit(1)
-
     application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("new", new_listings))
@@ -140,6 +129,7 @@ def main():
         listen="0.0.0.0",
         port=PORT,
         url_path="webhook",
+        webhook_url=f"https://{APP_NAME}.onrender.com/webhook",
     )
 
 
