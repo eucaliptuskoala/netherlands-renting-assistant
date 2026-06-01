@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 8080))
 APP_NAME = "nra_bot"
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", f"https://{APP_NAME}.onrender.com")
 
 STATUS_ICONS = {"new": "\U0001F195", "accepted": "\u2705", "rejected": "\u274C"}
 
@@ -132,7 +133,7 @@ def main():
         listen="0.0.0.0",
         port=PORT,
         url_path="webhook",
-        webhook_url=f"https://{APP_NAME}.onrender.com/webhook",
+        webhook_url=f"{RENDER_URL}/webhook",
     )
 
 
