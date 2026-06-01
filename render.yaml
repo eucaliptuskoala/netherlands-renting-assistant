@@ -2,6 +2,7 @@ services:
   - type: web
     name: housing-bot
     runtime: python
+    autoDeploy: true
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
