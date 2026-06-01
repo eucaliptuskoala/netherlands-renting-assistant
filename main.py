@@ -20,7 +20,7 @@ HEADERS = {
 }
 
 
-def process(seen_ids, houses, callback):
+def process(seen_ids, houses):
     new_count = 0
     for house in houses:
         listing_id = str(house.id)
@@ -29,30 +29,7 @@ def process(seen_ids, houses, callback):
         seen_ids.add(listing_id)
         storage.mark_seen(listing_id, house.address, str(house.price), house.living_area, house.URL)
         new_count += 1
-
-        try:
-            callback(house)
-        except Exception as e:
-            print(f"[{datetime.now():%H:%M:%S}] Error processing {listing_id}: {e}", file=sys.stderr)
     return new_count
-
-
-def sendToTelegram(house):
-    chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-    token = os.environ.get('TELEGRAM_BOT_TOKEN')
-    if not chat_id or not token:
-        print(f"[{datetime.now():%H:%M:%S}] TELEGRAM_CHAT_ID or TELEGRAM_BOT_TOKEN not set", file=sys.stderr)
-        return
-
-    url = f'https://api.telegram.org/bot{token}/sendMessage'
-    body = {
-        'parse_mode': 'Markdown',
-        'chat_id': chat_id,
-        'text': f'**{house.address}**\n€{house.price}/{house.living_area}\n{house.URL}',
-    }
-    r = requests.post(url, json=body)
-    if not r.ok:
-        print(f"[{datetime.now():%H:%M:%S}] Telegram send failed: {r.status_code} {r.text}", file=sys.stderr)
 
 
 if __name__ == '__main__':
@@ -68,7 +45,7 @@ if __name__ == '__main__':
         for svc in svcs:
             print(f"[{datetime.now():%H:%M:%S}] Running {svc.__class__.__name__}...")
             houses = svc.Run()
-            total_new += process(seen_ids, houses, sendToTelegram)
+            total_new += process(seen_ids, houses)
             print(f"  -> {len(houses)} listings checked, {total_new} new so far")
     except Exception as e:
         print(f"[{datetime.now():%H:%M:%S}] Error: {e}", file=sys.stderr)

@@ -1,10 +1,7 @@
 import os
-import sys
 import logging
-from datetime import datetime
 
 from dotenv import load_dotenv
-import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
@@ -19,7 +16,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-CHAT_ID = int(os.environ["TELEGRAM_CHAT_ID"])
 PORT = int(os.environ.get("PORT", 8080))
 APP_NAME = "NRA_bot"
 
@@ -41,8 +37,15 @@ def format_listing(l):
 
 async def start(update: Update, context):
     await update.message.reply_text(
-        "Housing Monitor Bot\n\n"
-        "/new \u2014 view new listings\n"
+        "\U0001F3E0 Housing Monitor Bot\n\n"
+        "I track new rental listings for you.\n\n"
+        "How it works:\n"
+        "1. You\u2019ll receive a summary when new listings appear\n"
+        "2. Use /new to see them with Accept / Reject buttons\n"
+        "3. Accepted = you\u2019re interested, Rejected = not interested\n"
+        "4. Use /accepted or /rejected to review past decisions\n\n"
+        "Commands:\n"
+        "/new \u2014 review new listings\n"
         "/accepted \u2014 view accepted listings\n"
         "/rejected \u2014 view rejected listings"
     )
