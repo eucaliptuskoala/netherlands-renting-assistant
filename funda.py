@@ -24,6 +24,7 @@ class Funda(RentProviderInterface):
         """Scrape Funda and return a list of House objects."""
         url = f"{self.BASE}/en/huur/{self._city}/"  # Funda's rental URL for the city (e.g. /en/huur/eindhoven/)
         r = curl_req.get(url, headers=self._header, impersonate='chrome131')  # Bypasses Funda's Akamai bot detection
+        print(f"    [debug] Funda response: {len(r.text)} bytes, first 200: {r.text[:200].strip()!r}")
         soup = BeautifulSoup(r.text, 'lxml')  # Parse HTML with the fast lxml parser
 
         ret = []

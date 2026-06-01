@@ -25,6 +25,7 @@ class Pararius(RentProviderInterface):
         # Pararius allows price filtering directly in the URL (e.g. /apartments/eindhoven/400-1400)
         url = f"{self.BASE}/apartments/{self._city}/{self._min_price}-{self._max_price}"
         r = curl_req.get(url, headers=self._header, impersonate='chrome131')  # Bypasses Pararius' Cloudflare detection
+        print(f"    [debug] Pararius response: {len(r.text)} bytes, first 200: {r.text[:200].strip()!r}")
         soup = BeautifulSoup(r.text, 'lxml')
 
         ret = []
