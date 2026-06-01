@@ -27,39 +27,42 @@ class Funda(RentProviderInterface):
         soup = BeautifulSoup(r.text, 'lxml')  # Parse HTML with the fast lxml parser
 
         ret = []
-        # Funda lists each listing inside a <div> that has "border-b" in its CSS class
-        for listing in soup.select('div[class*="border-b"]'):
-            # Each listing has an <a> tag with data-testid="listingDetailsAddress"
-            link = listing.find('a', attrs={"data-testid": "listingDetailsAddress"})
-            if not link:
-                continue  # No link means this isn't a real listing — skip it
-
+        # Funda renders each listing with an <a data-testid="listingDetailsAddress"> link.
+        # Finding links directly is more robust than guessing container classes.
+        for link in soup.select('a[data-testid="listingDetailsAddress"]'):
             href = link.get('href', '')        # Relative URL like "/en/huur/eindhoven/abc123/..."
             full_url = self.BASE + href         # Full URL like "https://funda.nl/en/huur/eindhoven/abc123/..."
 
             # Extract a unique listing ID from the URL (the last path segment before any trailing slash)
             house_id = href.rstrip('/').rsplit('/', 1)[-1]
 
-            # Address is inside a <span class="truncate"> within the link
-            addr_tag = link.find('span', class_='truncate')
-            address = addr_tag.get_text(strip=True) if addr_tag else ''
+            # Address is inside a <span> within the link (no more "truncate" class — just find any span)
+            addr_span = link.find('span')
+            address = addr_span.get_text(strip=True) if addr_span else ''
 
-            # Price is inside a <div class="truncate"> that contains "€"
+            # Walk up 4 parent levels from the <a> tag to reach the listing container div
+            # The hierarchy is: a > h2 > div.flex.flex-col > div.flex > div.\@container.border-b
+            container = link
+            for _ in range(4):
+                container = container.parent
+
+            # Price is inside the container, usually in a <div class="mt-2"> with text like "€ 1,600 /maand"
             price = 0
-            for d in listing.find_all('div', class_='truncate'):
-                t = d.get_text(strip=True)
-                if '\u20AC' in t:           # Found the price element
-                    price = int(re.sub(r'[^0-9]', '', t.split('/')[0]))  # Remove everything except digits
-                    break
+            price_div = container.find('div', class_=lambda c: c and 'mt-2' in (c if isinstance(c, str) else ' '.join(c)))
+            if price_div:
+                price_match = re.search(r'€\s*([0-9,.]+)', price_div.get_text())
+                if price_match:
+                    price = int(re.sub(r'[^0-9]', '', price_match.group(1)))  # Remove € , . /maand etc.
 
             # Check if this price is within our configured range
             if not self._isPriceMatched(price):
                 continue  # Skip listings outside our budget
 
-            # Living area is the first item in a <ul class="gap-3"> list
-            feature_items = listing.select('ul[class*="gap-3"] li')
-            features = [li.get_text(strip=True) for li in feature_items]
-            living_area = features[0] if features else ''
+            # Living area is shown as "XX m²" somewhere in the container text
+            living_area = ''
+            area_match = re.search(r'(\d+)\s*m[²2]', container.get_text())
+            if area_match:
+                living_area = area_match.group(0)  # e.g. "47 m²"
 
             # Add the listing to our results
             ret.append(House(house_id, full_url, address, price, living_area))
