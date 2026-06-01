@@ -8,6 +8,12 @@ from bs4 import BeautifulSoup               # HTML parser
 from model import House                     # Data class for a listing
 from interface import RentProviderInterface  # Parent class
 
+try:
+    from playwright.sync_api import sync_playwright
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    HAS_PLAYWRIGHT = False
+
 
 class Pararius(RentProviderInterface):
     BASE = "https://www.pararius.com"  # Pararius base URL
@@ -19,6 +25,16 @@ class Pararius(RentProviderInterface):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
+
+    def _fetch_with_playwright(self, url):
+        """Fallback: use a real headless Chromium to bypass Cloudflare."""
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, wait_until='networkidle')
+            html = page.content()
+            browser.close()
+        return html
 
     def Run(self):
         """Scrape Pararius and return a list of House objects."""
@@ -41,6 +57,12 @@ class Pararius(RentProviderInterface):
                 break
 
         print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html)} bytes")
+
+        # If curl_cffi couldn't get past Cloudflare, fall back to Playwright (real browser).
+        if not html and HAS_PLAYWRIGHT:
+            print("    [debug] Pararius: falling back to Playwright...")
+            html = self._fetch_with_playwright(url)
+            print(f"    [debug] Pararius (playwright): {len(html)} bytes")
 
         soup = BeautifulSoup(html, 'lxml') if html else BeautifulSoup('', 'lxml')
 
