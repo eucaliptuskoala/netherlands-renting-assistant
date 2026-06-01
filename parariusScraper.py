@@ -2,17 +2,13 @@
 # Pararius is another Dutch rental website (focuses exclusively on rentals, no sales).
 # The structure is very similar to funda.py — same pattern, different CSS selectors.
 
+import os                                   # Read environment variables (for ScrapingBee API key)
 import re                                   # Regular expressions for extracting IDs and numbers from text
+import requests                             # Standard HTTP — used for ScrapingBee API fallback
 from curl_cffi import requests as curl_req  # Same curl-impersonate library as funda.py
 from bs4 import BeautifulSoup               # HTML parser
 from model import House                     # Data class for a listing
 from interface import RentProviderInterface  # Parent class
-
-try:
-    from playwright.sync_api import sync_playwright
-    HAS_PLAYWRIGHT = True
-except ImportError:
-    HAS_PLAYWRIGHT = False
 
 
 class Pararius(RentProviderInterface):
@@ -25,22 +21,6 @@ class Pararius(RentProviderInterface):
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
-
-    def _fetch_with_playwright(self, url):
-        """Fallback: use a real headless Chromium to bypass Cloudflare."""
-        with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
-            page = browser.new_page()
-            # Block images/fonts/media/stylesheets — Cloudflare challenge doesn't need them,
-            # and skipping them speeds up the page load significantly in CI.
-            page.route('**/*', lambda route: route.abort()
-                       if route.request.resource_type in ('image', 'font', 'media', 'stylesheet')
-                       else route.continue_())
-            page.goto(url, wait_until='load', timeout=90000)
-            page.wait_for_timeout(5000)
-            html = page.content()
-            browser.close()
-        return html
 
     def Run(self):
         """Scrape Pararius and return a list of House objects."""
@@ -64,11 +44,19 @@ class Pararius(RentProviderInterface):
 
         print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html)} bytes")
 
-        # If curl_cffi couldn't get past Cloudflare, fall back to Playwright (real browser).
-        if not html and HAS_PLAYWRIGHT:
-            print("    [debug] Pararius: falling back to Playwright...")
-            html = self._fetch_with_playwright(url)
-            print(f"    [debug] Pararius (playwright): {len(html)} bytes")
+        # If curl_cffi couldn't get past Cloudflare, fall back to ScrapingBee API.
+        if not html:
+            api_key = os.environ.get('SCRAPINGBEE_API_KEY')
+            if api_key:
+                print("    [debug] Pararius: falling back to ScrapingBee...")
+                r = requests.get('https://app.scrapingbee.com/api/v1/', params={
+                    'api_key': api_key,
+                    'url': url,
+                    'render_js': 'false',
+                })
+                if r.status_code == 200:
+                    html = r.text
+                    print(f"    [debug] Pararius (ScrapingBee): {len(html)} bytes")
 
         soup = BeautifulSoup(html, 'lxml') if html else BeautifulSoup('', 'lxml')
 
