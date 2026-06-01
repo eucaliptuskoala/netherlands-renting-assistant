@@ -24,9 +24,23 @@ class Pararius(RentProviderInterface):
         """Scrape Pararius and return a list of House objects."""
         # Pararius allows price filtering directly in the URL (e.g. /apartments/eindhoven/400-1400)
         url = f"{self.BASE}/apartments/{self._city}/{self._min_price}-{self._max_price}"
-        r = curl_req.get(url, headers=self._header, impersonate='chrome131')  # Bypasses Pararius' Cloudflare detection
-        print(f"    [debug] Pararius response: {len(r.text)} bytes, first 200: {r.text[:200].strip()!r}")
-        soup = BeautifulSoup(r.text, 'lxml')
+
+        # Cloudflare in GH Actions sometimes blocks chrome131 but lets older fingerprints through.
+        # We try multiple impersonations in order and use the first one that returns a real page (>20KB).
+        html = ''
+        used_impersonation = ''
+        for imp in ['chrome131', 'chrome124', 'safari17_5', 'firefox133']:
+            r = curl_req.get(url, headers=self._header, impersonate=imp)
+            if len(r.text) > 20000:  # Real listing page is ~700KB; CAPTCHA page is ~6KB
+                html = r.text
+                used_impersonation = imp
+                break
+
+        print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html or r.text)} bytes")
+        if not html:
+            print(f"    [debug]   first 200: {r.text[:200].strip()!r}")
+
+        soup = BeautifulSoup(html, 'lxml') if html else BeautifulSoup('', 'lxml')
 
         ret = []
         # Pararius lists each item as an <li> with class "search-list__item search-list__item--listing"
