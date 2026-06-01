@@ -31,7 +31,13 @@ class Pararius(RentProviderInterface):
         with sync_playwright() as pw:
             browser = pw.chromium.launch(headless=True)
             page = browser.new_page()
-            page.goto(url, wait_until='networkidle')
+            # Block images/fonts/media/stylesheets — Cloudflare challenge doesn't need them,
+            # and skipping them speeds up the page load significantly in CI.
+            page.route('**/*', lambda route: route.abort()
+                       if route.request.resource_type in ('image', 'font', 'media', 'stylesheet')
+                       else route.continue_())
+            page.goto(url, wait_until='load', timeout=90000)
+            page.wait_for_timeout(5000)
             html = page.content()
             browser.close()
         return html
