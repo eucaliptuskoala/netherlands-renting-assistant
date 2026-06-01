@@ -27,36 +27,35 @@ class Pararius(RentProviderInterface):
         # Pararius allows price filtering directly in the URL (e.g. /apartments/eindhoven/400-1400)
         url = f"{self.BASE}/apartments/{self._city}/{self._min_price}-{self._max_price}"
 
-        # Cloudflare in GH Actions sometimes blocks chrome131 but lets older fingerprints through.
-        # We try multiple impersonations in order and use the first one that returns a real page (>20KB).
+        # In GitHub Actions, Cloudflare blocks all data-center IPs → curl_cffi always fails.
+        # ScrapingBee handles proxy rotation and Cloudflare bypass natively.
+        # Locally (at home), curl_cffi works fine, so we skip ScrapingBee to save credits.
         html = ''
-        used_impersonation = ''
-        for imp in ['chrome131', 'chrome124', 'chrome110', 'chrome99', 'safari15_3']:
-            try:
-                r = curl_req.get(url, headers=self._header, impersonate=imp)
-            except Exception as e:
-                print(f"    [debug] Pararius: {imp} not supported ({e})")
-                continue
-            if len(r.text) > 20000:  # Real listing page is ~700KB; CAPTCHA page is ~6KB
+        api_key = os.environ.get('SCRAPINGBEE_API_KEY')
+        if api_key:
+            print("    [debug] Pararius: using ScrapingBee...")
+            r = requests.get('https://app.scrapingbee.com/api/v1/', params={
+                'api_key': api_key,
+                'url': url,
+                'render_js': 'false',
+            })
+            if r.status_code == 200:
                 html = r.text
-                used_impersonation = imp
-                break
+                print(f"    [debug] Pararius (ScrapingBee): {len(html)} bytes")
 
-        print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html)} bytes")
-
-        # If curl_cffi couldn't get past Cloudflare, fall back to ScrapingBee API.
+        # No API key? Try curl_cffi directly (works from non-data-center IPs).
         if not html:
-            api_key = os.environ.get('SCRAPINGBEE_API_KEY')
-            if api_key:
-                print("    [debug] Pararius: falling back to ScrapingBee...")
-                r = requests.get('https://app.scrapingbee.com/api/v1/', params={
-                    'api_key': api_key,
-                    'url': url,
-                    'render_js': 'false',
-                })
-                if r.status_code == 200:
+            for imp in ['chrome131', 'chrome124', 'chrome110', 'chrome99', 'safari15_3']:
+                try:
+                    r = curl_req.get(url, headers=self._header, impersonate=imp)
+                except Exception as e:
+                    print(f"    [debug] Pararius: {imp} not supported ({e})")
+                    continue
+                if len(r.text) > 20000:
                     html = r.text
-                    print(f"    [debug] Pararius (ScrapingBee): {len(html)} bytes")
+                    break
+
+            print(f"    [debug] Pararius (curl_cffi): {len(html)} bytes")
 
         soup = BeautifulSoup(html, 'lxml') if html else BeautifulSoup('', 'lxml')
 
