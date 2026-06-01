@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 PORT = int(os.environ.get("PORT", 8080))
-APP_NAME = "NRA_bot"
+APP_NAME = "nra_bot"
 
 STATUS_ICONS = {"new": "\U0001F195", "accepted": "\u2705", "rejected": "\u274C"}
 
@@ -138,6 +138,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-# test
