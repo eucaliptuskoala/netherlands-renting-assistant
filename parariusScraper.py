@@ -29,16 +29,18 @@ class Pararius(RentProviderInterface):
         # We try multiple impersonations in order and use the first one that returns a real page (>20KB).
         html = ''
         used_impersonation = ''
-        for imp in ['chrome131', 'chrome124', 'safari17_5', 'firefox133']:
-            r = curl_req.get(url, headers=self._header, impersonate=imp)
+        for imp in ['chrome131', 'chrome124', 'chrome110', 'chrome99', 'safari15_3']:
+            try:
+                r = curl_req.get(url, headers=self._header, impersonate=imp)
+            except Exception as e:
+                print(f"    [debug] Pararius: {imp} not supported ({e})")
+                continue
             if len(r.text) > 20000:  # Real listing page is ~700KB; CAPTCHA page is ~6KB
                 html = r.text
                 used_impersonation = imp
                 break
 
-        print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html or r.text)} bytes")
-        if not html:
-            print(f"    [debug]   first 200: {r.text[:200].strip()!r}")
+        print(f"    [debug] Pararius ({used_impersonation or 'none'}): {len(html)} bytes")
 
         soup = BeautifulSoup(html, 'lxml') if html else BeautifulSoup('', 'lxml')
 
