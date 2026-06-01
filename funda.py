@@ -15,7 +15,7 @@ class Funda(RentProviderInterface):
     def __init__(self, city='amsterdam', price=[0, 9000], header={}):
         super().__init__(city, price)  # Call parent __init__ to set city, min_price, max_price
         self._header = header or {      # HTTP headers that make our request look like a real browser
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
@@ -23,7 +23,7 @@ class Funda(RentProviderInterface):
     def Run(self):
         """Scrape Funda and return a list of House objects."""
         url = f"{self.BASE}/en/huur/{self._city}/"  # Funda's rental URL for the city (e.g. /en/huur/eindhoven/)
-        r = curl_req.get(url, headers=self._header, impersonate='chrome120')  # Special request that looks like Chrome 120
+        r = curl_req.get(url, headers=self._header, impersonate='chrome131')  # Bypasses Funda's Akamai bot detection
         soup = BeautifulSoup(r.text, 'lxml')  # Parse HTML with the fast lxml parser
 
         ret = []

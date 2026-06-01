@@ -1,56 +1,85 @@
-# bot.py - Telegram bot that shows rental listings with interactive buttons
-# This runs as a persistent web service on Render, not in GitHub Actions.
+# bot.py — Telegram bot with inline keyboard menu on every message
+# No ReplyKeyboardMarkup — every message has a menu row at the bottom so you can always navigate.
 
-import os               # Access environment variables like TELEGRAM_BOT_TOKEN, PORT
-import logging           # Print timestamped log messages so we can see what the bot is doing
+import os               # Read environment variables (bot token, port)
+import logging           # Print timestamped logs so we can see what the bot is doing
 
-from dotenv import load_dotenv  # Reads .env file so we can test locally without setting env vars manually
+from dotenv import load_dotenv  # Load .env file for local development
 
-# python-telegram-bot library types we use:
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler
 
-# Handlers wire up different ways a user can interact:
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+load_dotenv()  # Makes .env variables available to os.environ (on Render env vars are set directly)
 
-load_dotenv()  # Load variables from .env into os.environ (does nothing on Render — env vars are already set)
-
-import storage  # Our Supabase database layer — saves and loads listings from PostgreSQL
+import storage  # Our Supabase database layer (save/load/update listings)
 
 # --- Logging setup ---
-# logging.basicConfig configures the format once, at the root logger.
-# The format string includes: time, log level (INFO/ERROR), logger name, and the message.
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.INFO,
 )
-logger = logging.getLogger(__name__)  # Get a logger named "bot" for this module
+logger = logging.getLogger(__name__)
 
 # --- Environment variables ---
-TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # Your bot token from @BotFather — required, crashes if missing
-PORT = int(os.environ.get("PORT", 8080))  # Render assigns a random port via $PORT env var
-APP_NAME = "nra_bot"                      # Fallback app name (only used if RENDER_EXTERNAL_URL is missing)
+TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]  # Bot token from @BotFather (required, crashes if missing)
+PORT = int(os.environ.get("PORT", 8080))  # Render assigns a random port via $PORT
+APP_NAME = "nra_bot"                      # Fallback name (only used if RENDER_EXTERNAL_URL is missing)
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", f"https://{APP_NAME}.onrender.com")
-# RENDER_EXTERNAL_URL is auto-set by Render to your service's real URL, e.g.
-# "https://netherlands-renting-assistant-6bdd.onrender.com"
-# If it's missing (local dev), we fall back to the old hardcoded URL.
+# RENDER_EXTERNAL_URL is auto-set by Render to your service's real URL.
 
-# --- Listing status icons ---
-# These are shown next to each listing so you can tell at a glance what happened to it.
+# Icons used to show listing status at a glance
 STATUS_ICONS = {"new": "\U0001F195", "accepted": "\u2705", "rejected": "\u274C"}
 
-# --- Persistent menu (replaces the text input) ---
-# ReplyKeyboardMarkup pins buttons at the bottom of the Telegram chat.
-# When you tap one, it sends that text as a message, and our menu_handler catches it.
-MENU_KEYBOARD = ReplyKeyboardMarkup(
-    [["\U0001F3E0 New", "\u2705 Accepted", "\u274C Rejected"]],  # one row with 3 buttons
-    resize_keyboard=True,  # make buttons small so they don't take up half the screen
-)
+
+# --- Menu row (shown below every interactive message) ---
+# Tapping any of these buttons navigates to that section.
+# This replaces the old ReplyKeyboardMarkup approach — no need to type /start to see the menu.
+def menu_row():
+    """Return the navigation buttons that appear at the bottom of every message."""
+    return [
+        InlineKeyboardButton("\U0001F3E0 New", callback_data="menu_new"),
+        InlineKeyboardButton("\u2705 Accepted", callback_data="menu_accepted"),
+        InlineKeyboardButton("\u274C Rejected", callback_data="menu_rejected"),
+    ]
 
 
-# --- Helper: format a listing into a readable Telegram message ---
+# --- Keyboard builders (listing-specific buttons + menu row) ---
+
+def new_listing_keyboard(listing):
+    """Two rows: Accept/Reject + menu. Used in the /new one-by-one flow."""
+    keyboard = [
+        [
+            InlineKeyboardButton("\u2705 Accept", callback_data=f"new_accept:{listing['listing_id']}"),
+            InlineKeyboardButton("\u274C Reject", callback_data=f"new_reject:{listing['listing_id']}"),
+        ],
+        menu_row(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def accepted_keyboard(listing):
+    """Single Reject button + menu. Used in the /accepted list view."""
+    keyboard = [
+        [InlineKeyboardButton("\u274C Reject", callback_data=f"reject:{listing['listing_id']}")],
+        menu_row(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def rejected_keyboard(listing):
+    """Single Accept button + menu. Used in the /rejected list view."""
+    keyboard = [
+        [InlineKeyboardButton("\u2705 Accept", callback_data=f"accept:{listing['listing_id']}")],
+        menu_row(),
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+# --- Helper: format a listing into readable text ---
+
 def format_listing(l):
-    """Convert a listing dict (from storage.py) into a compact text block."""
-    icon = STATUS_ICONS.get(l["status"], "\U0001F3E0")  # pick icon based on status
+    """Convert a listing dict from Supabase into a compact text block."""
+    icon = STATUS_ICONS.get(l["status"], "\U0001F3E0")
     address = l["address"] or "Unknown address"
     price = l["price"] or "?"
     area = l["living_area"] or "?"
@@ -60,188 +89,217 @@ def format_listing(l):
         f"\U0001F4B0 \u20AC{price} / {area}\n"
         f"\U0001F517 {url}"
     )
-    # Example output:
-    # 🆕 Street 123
-    # 💰 €1200 / 65m²
-    # 🔗 https://funda.nl/...
 
 
 # --- Command: /start ---
+
 async def start(update: Update, context):
-    """Send a welcome message and attach the persistent menu to the chat."""
-    # update.message is the /start message the user sent
-    # reply_text sends a text response back to the same chat
+    """Send a welcome message with the menu."""
     await update.message.reply_text(
         "\U0001F3E0 Housing Monitor Bot\n\n"
         "I track new rental listings for you.\n\n"
         "How it works:\n"
         "1. You\u2019ll receive a summary when new listings appear\n"
-        "2. Use /new or tap \U0001F3E0 New to see them\n"
+        "2. Tap \U0001F3E0 New to review them one by one\n"
         "3. Accept = interested, Reject = not interested\n"
-        "4. Each goes to Accepted or Rejected lists\n\n"
-        "Tap a button below to start:",
-        reply_markup=MENU_KEYBOARD,  # attach the menu to this response (it persists)
+        "4. Tap \u2705 Accepted or \u274C Rejected to review past decisions\n\n"
+        "Tap \U0001F3E0 New to start:",
+        reply_markup=InlineKeyboardMarkup([menu_row()]),
     )
 
 
-# --- Command: /new (shows one listing at a time) ---
+# --- Command: /new (one-by-one) ---
+
 async def new_listings(update: Update, context):
-    """Fetch all 'new' listings from Supabase and show the first one with Accept/Reject buttons."""
-    listings = storage.get_listings_by_status("new")  # SELECT * FROM seen_listings WHERE status = 'new'
+    """Show one new listing at a time with Accept/Reject buttons and the menu."""
+    listings = storage.get_listings_by_status("new")
     if not listings:
-        await update.message.reply_text("No new listings.", reply_markup=MENU_KEYBOARD)
+        await update.message.reply_text(
+            "No new listings.",
+            reply_markup=InlineKeyboardMarkup([menu_row()]),
+        )
         return
 
-    first = listings[0]  # Show only the first listing — no lists, one at a time
-    # Two inline buttons below the listing text
-    # callback_data is what gets sent back to button_callback when tapped
-    # We prefix with "new_" so the callback knows this came from /new (for auto-advance)
-    keyboard = [
-        [
-            InlineKeyboardButton("\u2705 Accept", callback_data=f"new_accept:{first['listing_id']}"),
-            InlineKeyboardButton("\u274C Reject", callback_data=f"new_reject:{first['listing_id']}"),
-        ]
-    ]
+    first = listings[0]
     await update.message.reply_text(
         f"{format_listing(first)}\nStatus: {STATUS_ICONS['new']} New",
-        reply_markup=InlineKeyboardMarkup(keyboard),  # InlineKeyboardMarkup wraps the button array
+        reply_markup=new_listing_keyboard(first),
     )
 
 
-# --- Command: /accepted (shown as a list) ---
+# --- Command: /accepted (full list) ---
+
 async def accepted_listings(update: Update, context):
-    """Show ALL accepted listings with a Reject button on each (in case you change your mind)."""
+    """Show ALL accepted listings with a Reject button (change your mind) and the menu."""
     listings = storage.get_listings_by_status("accepted")
     if not listings:
-        await update.message.reply_text("No accepted listings.", reply_markup=MENU_KEYBOARD)
-        return
-    for l in listings:  # Send every listing as a separate message (you get a scrollable list)
-        keyboard = [
-            [InlineKeyboardButton("\u274C Reject", callback_data=f"reject:{l['listing_id']}")]
-        ]
         await update.message.reply_text(
-            f"{format_listing(l)}\nStatus: {STATUS_ICONS['accepted']} Accepted",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            "No accepted listings.",
+            reply_markup=InlineKeyboardMarkup([menu_row()]),
         )
-
-
-# --- Command: /rejected (shown as a list) ---
-async def rejected_listings(update: Update, context):
-    """Show ALL rejected listings with an Accept button on each (in case you change your mind)."""
-    listings = storage.get_listings_by_status("rejected")
-    if not listings:
-        await update.message.reply_text("No rejected listings.", reply_markup=MENU_KEYBOARD)
         return
     for l in listings:
-        keyboard = [
-            [InlineKeyboardButton("\u2705 Accept", callback_data=f"accept:{l['listing_id']}")]
-        ]
         await update.message.reply_text(
-            f"{format_listing(l)}\nStatus: {STATUS_ICONS['rejected']} Rejected",
-            reply_markup=InlineKeyboardMarkup(keyboard),
+            f"{format_listing(l)}\nStatus: {STATUS_ICONS['accepted']} Accepted",
+            reply_markup=accepted_keyboard(l),
         )
 
 
-# --- Inline button presses (Accept / Reject) ---
+# --- Command: /rejected (full list) ---
+
+async def rejected_listings(update: Update, context):
+    """Show ALL rejected listings with an Accept button (change your mind) and the menu."""
+    listings = storage.get_listings_by_status("rejected")
+    if not listings:
+        await update.message.reply_text(
+            "No rejected listings.",
+            reply_markup=InlineKeyboardMarkup([menu_row()]),
+        )
+        return
+    for l in listings:
+        await update.message.reply_text(
+            f"{format_listing(l)}\nStatus: {STATUS_ICONS['rejected']} Rejected",
+            reply_markup=rejected_keyboard(l),
+        )
+
+
+# --- Inline button handler (everything goes through here) ---
+
 async def button_callback(update: Update, context):
-    """Handle button taps. Update status in DB, then auto-advance if this was from /new."""
-    query = update.callback_query  # This is the callback data object, not a regular message
-    await query.answer()           # Tell Telegram we received the tap (removes the loading spinner)
+    """Handle ALL button taps: menu navigation, Accept, Reject, auto-advance."""
+    query = update.callback_query
+    await query.answer()  # Acknowledge to Telegram (stops the loading spinner)
 
-    raw_action, listing_id = query.data.split(":", 1)  # e.g. "new_accept:abc123" -> "new_accept", "abc123"
+    data = query.data
 
-    # Determine what action to take based on the callback_data prefix
+    # --- Menu navigation: replace current message with new content ---
+
+    if data == "menu_new":
+        listings = storage.get_listings_by_status("new")
+        if not listings:
+            await query.edit_message_text(
+                "No new listings.",
+                reply_markup=InlineKeyboardMarkup([menu_row()]),
+            )
+            return
+        first = listings[0]
+        await query.edit_message_text(
+            f"{format_listing(first)}\nStatus: {STATUS_ICONS['new']} New",
+            reply_markup=new_listing_keyboard(first),
+        )
+        return
+
+    if data == "menu_accepted":
+        listings = storage.get_listings_by_status("accepted")
+        if not listings:
+            await query.edit_message_text(
+                "No accepted listings.",
+                reply_markup=InlineKeyboardMarkup([menu_row()]),
+            )
+            return
+        # Show the first one inline; the rest as new messages
+        first = listings[0]
+        await query.edit_message_text(
+            f"{format_listing(first)}\nStatus: {STATUS_ICONS['accepted']} Accepted",
+            reply_markup=accepted_keyboard(first),
+        )
+        for l in listings[1:]:
+            await query.message.reply_text(
+                f"{format_listing(l)}\nStatus: {STATUS_ICONS['accepted']} Accepted",
+                reply_markup=accepted_keyboard(l),
+            )
+        return
+
+    if data == "menu_rejected":
+        listings = storage.get_listings_by_status("rejected")
+        if not listings:
+            await query.edit_message_text(
+                "No rejected listings.",
+                reply_markup=InlineKeyboardMarkup([menu_row()]),
+            )
+            return
+        first = listings[0]
+        await query.edit_message_text(
+            f"{format_listing(first)}\nStatus: {STATUS_ICONS['rejected']} Rejected",
+            reply_markup=rejected_keyboard(first),
+        )
+        for l in listings[1:]:
+            await query.message.reply_text(
+                f"{format_listing(l)}\nStatus: {STATUS_ICONS['rejected']} Rejected",
+                reply_markup=rejected_keyboard(l),
+            )
+        return
+
+    # --- Listing action (Accept / Reject) ---
+    # Data format: "new_accept:ID", "new_reject:ID", "accept:ID", "reject:ID"
+
+    if ":" not in data:
+        return  # Unknown callback, ignore
+
+    raw_action, listing_id = data.split(":", 1)
+
     if raw_action == "new_accept":
         storage.update_status(listing_id, "accepted")
-        new_status_text = f"{STATUS_ICONS['accepted']} Accepted"
+        status_text = f"{STATUS_ICONS['accepted']} Accepted"
     elif raw_action == "new_reject":
         storage.update_status(listing_id, "rejected")
-        new_status_text = f"{STATUS_ICONS['rejected']} Rejected"
+        status_text = f"{STATUS_ICONS['rejected']} Rejected"
     elif raw_action == "accept":
         storage.update_status(listing_id, "accepted")
-        new_status_text = f"{STATUS_ICONS['accepted']} Accepted"
+        status_text = f"{STATUS_ICONS['accepted']} Accepted"
     elif raw_action == "reject":
         storage.update_status(listing_id, "rejected")
-        new_status_text = f"{STATUS_ICONS['rejected']} Rejected"
+        status_text = f"{STATUS_ICONS['rejected']} Rejected"
     else:
-        return  # Unknown action — do nothing
+        return
 
-    # Edit the inline message to remove buttons and show the updated status
-    # rsplit splits on the LAST occurrence of "\nStatus:" so we can replace it
+    # Edit the current message to show the new status (no Accept/Reject buttons, but menu stays)
     base_text = query.message.text.rsplit("\nStatus:", 1)[0]
     await query.edit_message_text(
-        text=f"{base_text}\nStatus: {new_status_text}",
-        reply_markup=None,  # Remove Accept/Reject buttons — this listing is done
+        text=f"{base_text}\nStatus: {status_text}",
+        reply_markup=InlineKeyboardMarkup([menu_row()]),  # Keep menu visible
     )
 
-    # Auto-advance: only if this was from the /new flow (callback starts with "new_")
+    # Auto-advance: if this was from the /new flow, show the next listing
     if raw_action.startswith("new_"):
-        remaining = storage.get_listings_by_status("new")  # Re-fetch remaining new listings
+        remaining = storage.get_listings_by_status("new")
         if remaining:
-            next_one = remaining[0]  # Show the next one
-            kbd = [
-                [
-                    InlineKeyboardButton("\u2705 Accept", callback_data=f"new_accept:{next_one['listing_id']}"),
-                    InlineKeyboardButton("\u274C Reject", callback_data=f"new_reject:{next_one['listing_id']}"),
-                ]
-            ]
+            next_one = remaining[0]
             await query.message.reply_text(
                 f"{format_listing(next_one)}\nStatus: {STATUS_ICONS['new']} New",
-                reply_markup=InlineKeyboardMarkup(kbd),
+                reply_markup=new_listing_keyboard(next_one),
             )
         else:
             await query.message.reply_text(
                 "All caught up! No more new listings.",
-                reply_markup=MENU_KEYBOARD,  # Bring back the persistent menu
+                reply_markup=InlineKeyboardMarkup([menu_row()]),
             )
 
 
-# --- Persistent menu button handler ---
-async def menu_handler(update: Update, context):
-    """Route taps on the persistent menu buttons to the correct command handler."""
-    text = update.message.text  # The button text, e.g. "\U0001F3E0 New"
-    if text == "\U0001F3E0 New":
-        await new_listings(update, context)
-    elif text == "\u2705 Accepted":
-        await accepted_listings(update, context)
-    elif text == "\u274C Rejected":
-        await rejected_listings(update, context)
-    # If none of the above match, we silently ignore (the user typed something random)
-
-
 # --- Application entry point ---
+
 def main():
-    """Build the bot and start the webhook."""
-    # Application.builder() is a factory pattern — configure then .build()
+    """Build the bot application and start the webhook."""
     application = Application.builder().token(TOKEN).build()
 
-    # Register handlers in order of priority (first match wins)
-    # CommandHandler catches "/command_name" messages
+    # Command handlers (for typing /start, /new, etc.)
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("new", new_listings))
     application.add_handler(CommandHandler("accepted", accepted_listings))
     application.add_handler(CommandHandler("rejected", rejected_listings))
-    # CallbackQueryHandler catches inline button press data
-    application.add_handler(CallbackQueryHandler(button_callback))
-    # MessageHandler catches all non-command text (our persistent menu buttons)
-    # filters.TEXT = only text messages (not photos, stickers, etc.)
-    # ~filters.COMMAND = exclude "/commands" (they're handled above)
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, menu_handler))
 
-    # Start the webhook
-    # Render needs an HTTP endpoint to check that the service is alive.
-    # run_webhook sets up a small HTTP server AND registers the webhook with Telegram
-    # so Telegram knows where to send updates: https://your-service.onrender.com/webhook
+    # Callback handler (for ALL inline button taps — menu + accept/reject)
+    application.add_handler(CallbackQueryHandler(button_callback))
+
+    # Start the webhook (Render needs an HTTP endpoint)
     logger.info("Starting webhook on 0.0.0.0:%s", PORT)
     application.run_webhook(
-        listen="0.0.0.0",     # Accept connections from any network interface
-        port=PORT,             # Use the port Render assigned (or 8080 locally)
-        url_path="webhook",    # Telegram sends updates to /webhook
-        webhook_url=f"{RENDER_URL}/webhook",  # Full URL Telegram should POST to
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="webhook",
+        webhook_url=f"{RENDER_URL}/webhook",
     )
 
 
-# --- Script entry point ---
-# This runs when you execute `python bot.py`
 if __name__ == "__main__":
     main()

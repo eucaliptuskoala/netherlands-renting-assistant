@@ -15,7 +15,7 @@ class Pararius(RentProviderInterface):
     def __init__(self, city='amsterdam', price=[0, 9000], header={}):
         super().__init__(city, price)
         self._header = header or {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9",
         }
@@ -24,7 +24,7 @@ class Pararius(RentProviderInterface):
         """Scrape Pararius and return a list of House objects."""
         # Pararius allows price filtering directly in the URL (e.g. /apartments/eindhoven/400-1400)
         url = f"{self.BASE}/apartments/{self._city}/{self._min_price}-{self._max_price}"
-        r = curl_req.get(url, headers=self._header, impersonate='chrome120')
+        r = curl_req.get(url, headers=self._header, impersonate='chrome131')  # Bypasses Pararius' Cloudflare detection
         soup = BeautifulSoup(r.text, 'lxml')
 
         ret = []
