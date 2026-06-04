@@ -1,13 +1,8 @@
-# bot.py — Telegram bot with dynamic reply keyboard
-# When reviewing a listing: [✅ Accept | ❌ Reject]
-# When idle (no listings): [🏠 New | ✅ Accepted | ❌ Rejected]
-
-import os
 import logging
+import os
 
 from dotenv import load_dotenv
-
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 load_dotenv()
@@ -25,13 +20,13 @@ PORT = int(os.environ.get("PORT", 8080))
 APP_NAME = "nra_bot"
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", f"https://{APP_NAME}.onrender.com")
 
-STATUS_ICONS = {"new": "\U0001F195", "accepted": "\u2705", "rejected": "\u274C"}
+STATUS_ICONS = {"new": "\U0001f195", "accepted": "\u2705", "rejected": "\u274c"}
 
-BTN_NEW = "\U0001F3E0 New"
+BTN_NEW = "\U0001f3e0 New"
 BTN_ACCEPTED = "\u2705 Accepted"
-BTN_REJECTED = "\u274C Rejected"
+BTN_REJECTED = "\u274c Rejected"
 BTN_ACCEPT = "\u2705 Accept"
-BTN_REJECT = "\u274C Reject"
+BTN_REJECT = "\u274c Reject"
 
 
 def routing_keyboard():
@@ -49,29 +44,33 @@ def accept_reject_keyboard():
 
 
 def format_listing(l):
-    icon = STATUS_ICONS.get(l["status"], "\U0001F3E0")
+    icon = STATUS_ICONS.get(l["status"], "\U0001f3e0")
     address = l["address"] or "Unknown address"
     price = l["price"] or "?"
     area = l["living_area"] or "?"
     url = l["url"] or "No URL"
-    return (
-        f"{icon} {address}\n"
-        f"\U0001F4B0 \u20AC{price} / {area}\n"
-        f"\U0001F517 {url}"
-    )
+    return f"{icon} {address}\n\U0001f4b0 \u20ac{price} / {area}\n\U0001f517 {url}"
 
 
 async def start(update: Update, context):
     context.user_data.clear()
     await update.message.reply_text(
-        "\U0001F3E0 Housing Monitor Bot\n\n"
+        "\U0001f3e0 Housing Monitor Bot\n\n"
         "I track new rental listings for you.\n\n"
         "How it works:\n"
         "1. You\u2019ll receive a summary when new listings appear\n"
-        "2. Tap \U0001F3E0 New to review them one by one\n"
+        "2. Tap \U0001f3e0 New to review them one by one\n"
         "3. Accept = interested, Reject = not interested\n"
-        "4. Tap \u2705 Accepted or \u274C Rejected to review past decisions\n\n"
-        "Tap \U0001F3E0 New to start:",
+        "4. Tap \u2705 Accepted or \u274c Rejected to review past decisions\n\n"
+        "Tap \U0001f3e0 New to start:",
+        reply_markup=routing_keyboard(),
+    )
+
+
+async def cancel(update: Update, context):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "Cancelled. Use the buttons below to navigate.",
         reply_markup=routing_keyboard(),
     )
 
@@ -106,27 +105,40 @@ async def cmd_rejected(update: Update, context):
     await _show_listing(update, context, "rejected", storage.get_listings_by_status("rejected"))
 
 
+BUTTON_HANDLERS = {
+    BTN_NEW: cmd_new,
+    BTN_ACCEPTED: cmd_accepted,
+    BTN_REJECTED: cmd_rejected,
+}
+
+
 async def handle_text(update: Update, context):
     text = update.message.text
 
-    if text == BTN_NEW:
-        await cmd_new(update, context)
-    elif text == BTN_ACCEPTED:
-        await cmd_accepted(update, context)
-    elif text == BTN_REJECTED:
-        await cmd_rejected(update, context)
-    elif text in (BTN_ACCEPT, BTN_REJECT):
+    handler = BUTTON_HANDLERS.get(text)
+    if handler:
+        await handler(update, context)
+        return
+
+    if text in (BTN_ACCEPT, BTN_REJECT):
         listing_id = context.user_data.get("current_listing_id")
         flow = context.user_data.get("current_flow")
         if not listing_id or not flow:
             await update.message.reply_text(
-                "No active listing to review. Tap \U0001F3E0 New to start.",
+                "No active listing to review. Tap \U0001f3e0 New to start.",
                 reply_markup=routing_keyboard(),
             )
             return
 
         new_status = "accepted" if text == BTN_ACCEPT else "rejected"
-        storage.update_status(listing_id, new_status)
+        success = storage.update_status(listing_id, new_status)
+
+        if not success:
+            await update.message.reply_text(
+                "Could not save your decision. Please try again.",
+                reply_markup=accept_reject_keyboard(),
+            )
+            return
 
         remaining = storage.get_listings_by_status(flow)
         if remaining:
@@ -150,6 +162,7 @@ def main():
     application = Application.builder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("cancel", cancel))
     application.add_handler(CommandHandler("new", cmd_new))
     application.add_handler(CommandHandler("accepted", cmd_accepted))
     application.add_handler(CommandHandler("rejected", cmd_rejected))
