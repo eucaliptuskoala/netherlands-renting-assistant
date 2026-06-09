@@ -11,6 +11,7 @@ import storage
 from funda import Funda
 from parariusScraper import Pararius
 from vestide import Vestide
+from xior import Xior
 
 AREA = "eindhoven"
 PRICE = [400, 1400]
@@ -47,6 +48,7 @@ if __name__ == "__main__":
         Funda(AREA, PRICE, header=HEADERS),
         Pararius(AREA, PRICE, header=HEADERS),
         Vestide(AREA, PRICE, header=HEADERS),
+        Xior(AREA, PRICE, header=HEADERS),
     ]
 
     seen_ids = storage.load_seen_ids()
