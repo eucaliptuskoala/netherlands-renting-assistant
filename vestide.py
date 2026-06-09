@@ -44,7 +44,7 @@ class Vestide(RentProviderInterface):
             address = item.get("advertentietitel", "")
 
             price_text = item.get("totaleHuur", "0")
-            price = int(re.sub(r"[^0-9]", "", price_text)) if price_text else 0
+            price = int(float(re.sub(r"[^0-9.]", "", price_text))) if price_text else 0
 
             if not self._isPriceMatched(price):
                 continue
