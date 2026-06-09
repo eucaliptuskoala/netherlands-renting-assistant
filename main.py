@@ -10,6 +10,7 @@ load_dotenv()
 import storage
 from funda import Funda
 from parariusScraper import Pararius
+from vestide import Vestide
 
 AREA = "eindhoven"
 PRICE = [400, 1400]
@@ -42,7 +43,11 @@ def process(seen_ids, houses):
 
 
 if __name__ == "__main__":
-    svcs = [Funda(AREA, PRICE, header=HEADERS), Pararius(AREA, PRICE, header=HEADERS)]
+    svcs = [
+        Funda(AREA, PRICE, header=HEADERS),
+        Pararius(AREA, PRICE, header=HEADERS),
+        Vestide(AREA, PRICE, header=HEADERS),
+    ]
 
     seen_ids = storage.load_seen_ids()
     print(f"[{datetime.now():%H:%M:%S}] Started ({len(seen_ids)} already seen)")
