@@ -9,6 +9,7 @@ load_dotenv()
 
 import storage
 from funda import Funda
+from kamernet import Kamernet
 from parariusScraper import Pararius
 from vestide import Vestide
 from xior import Xior
@@ -46,6 +47,7 @@ def process(seen_ids, houses):
 if __name__ == "__main__":
     svcs = [
         Funda(AREA, PRICE, header=HEADERS),
+        Kamernet(AREA, PRICE, header=HEADERS),
         Pararius(AREA, PRICE, header=HEADERS),
         Vestide(AREA, PRICE, header=HEADERS),
         Xior(AREA, PRICE, header=HEADERS),
