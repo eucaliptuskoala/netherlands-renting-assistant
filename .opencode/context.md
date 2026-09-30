@@ -5,12 +5,12 @@ Scrapes Dutch rental websites (Funda.nl and Pararius.com) and sends new listings
 
 ## Tech Stack
 - **Language**: Python 3.11+
-- **Scraping**: `curl_cffi` (TLS fingerprint impersonation) for Funda; ScrapingBee API + `curl_cffi` fallback for Pararius
+- **Scraping**: `curl_cffi` (TLS fingerprint impersonation) for Funda, Pararius, Kamernet, Vestide; Playwright Chromium for Xior
 - **Parsing**: BeautifulSoup + lxml
 - **Storage**: PostgreSQL via Supabase (psycopg2)
 - **Bot**: python-telegram-bot (webhook-based, deployed on Render)
 - **Scheduling**: GitHub Actions cron (every 15 minutes)
-- **Quality**: Ruff linter + mypy configured (June 2026), no tests yet
+- **Quality**: Ruff linter + mypy configured
 
 ## Scraping Approaches
 
@@ -18,9 +18,9 @@ Scrapes Dutch rental websites (Funda.nl and Pararius.com) and sends new listings
 
 | Approach | Where | How it works |
 |----------|-------|-------------|
-| `curl_cffi` TLS impersonation | Funda (primary), Pararius (fallback) | Mimics Chrome 131's TLS fingerprint at the C library level (libcurl-impersonate). Beats Akamai (Funda) and sometimes Cloudflare (Pararius). |
-| ScrapingBee API | Pararius (primary) | Paid proxy-as-a-service that handles Cloudflare bypass. Works from data-center IPs (GitHub Actions). 1,000 free credits, then $49/mo. |
-| Standard `requests` | ScrapingBee calls + Telegram notifications | No impersonation needed for API calls. |
+| `curl_cffi` TLS impersonation | Funda, Pararius, Kamernet, Vestide | Mimics Chrome/Safari TLS fingerprints at the C library level (libcurl-impersonate). Beats Akamai and Cloudflare. |
+| Playwright Chromium | Xior | Headless browser for JavaScript/Yardi room availability API extraction. |
+| Standard `requests` | Telegram notifications | Simple HTTP POST to Telegram Bot API. |
 
 ### Architecture
 - Interface → Scrapers → Model → Storage → Telegram
@@ -33,7 +33,7 @@ Scrapes Dutch rental websites (Funda.nl and Pararius.com) and sends new listings
 |------|------|
 | `interface.py` | Abstract base class for all scrapers |
 | `funda.py` | Funda scraper (curl_cffi, Akamai bypass) |
-| `parariusScraper.py` | Pararius scraper (ScrapingBee + curl_cffi fallback) |
+| `pararius.py` | Pararius scraper (ScrapingBee + curl_cffi fallback) |
 | `model.py` | House dataclass |
 | `storage.py` | Supabase/Postgres CRUD |
 | `main.py` | GitHub Actions entry point — scrape + notify |
@@ -46,7 +46,7 @@ Ranked by practicality for this codebase:
 ### 1. ScraperAPI (managed, free tier)
 - **Free**: 5,000 req/mo, no credit card
 - **Integration**: Prepend `http://api.scraperapi.com?api_key=...&url=` to target URL
-- **Effort**: ~3 lines changed in `parariusScraper.py`
+- **Effort**: ~3 lines changed in `pararius.py`
 - **Pro**: Same pattern as ScrapingBee, pay only for success, largest free tier
 - **Con**: JS rendering costs 5x credits
 
@@ -76,8 +76,15 @@ Ranked by practicality for this codebase:
 - **Integration**: Same pattern as ScrapingBee
 - **Pro**: Cheapest paid entry at $29/mo
 
-## Current Status (June 2026)
-- All critical error-handling issues reviewed and fixed
-- Ruff linter and mypy configured in pyproject.toml
-- No tests yet
-- Working on: code quality review implementation
+## Current Status (September 2026)
+- Multi-user architecture implemented and verified:
+  - Database schema normalized (`users`, `user_listings`, and master catalog `seen_listings`).
+  - Historical data (530 listings) 100% migrated to owner's profile with zero data loss.
+  - Step-by-step onboarding conversation wizard in Telegram bot (`bot.py`) for new users and reusable via `⚙️ Settings` -> `✏️ Change Settings`.
+  - ScrapingBee completely retired; Pararius relies solely on `curl_cffi` TLS impersonation.
+  - Batched database persistence (`save_and_assign_listings`) in a single connection & transaction.
+  - Scraper runs partitioned by exact user budget profiles to eliminate page-1 starvation.
+- Quality tooling: Ruff linter + mypy passing cleanly across all files.
+- Next steps: Deploy updated webhook to Render and let the friend start the bot via `/start`!
+
+
