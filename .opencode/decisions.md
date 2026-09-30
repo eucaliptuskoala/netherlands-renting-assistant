@@ -45,4 +45,13 @@
   4. Partition scraper queries by exact user budget profiles `(city, min_price, max_price)` in `main.py` rather than an all-inclusive outer envelope.
 - **Consequence**: Drastically reduced database latency/connections, eliminated page-1 result starvation for differing budgets, and created an intuitive button-driven setup experience.
 
+## ADR-7: Scraper Resilience & Modern DOM Parsing (September 2026)
+
+- **Context**: Funda deprecated its `/en/huur/` URL structure and redesigned listing cards, causing 404 errors and broken price extraction. Xior crawler crashed with unhandled JS `ReferenceError` when target scripts were delayed.
+- **Decision**:
+  1. Funda: switch to canonical `/huur/{city}/` endpoint and container-scoped price regex.
+  2. Xior: use safe `window.xiorajax?.ajaxurl` property access inside Playwright evaluation.
+  3. Pararius: provide transparent diagnostic logging for Cloudflare challenge responses.
+- **Consequence**: Restored Funda listing discovery (15+ listings per run) and prevented crawler aborts on Xior.
+
 

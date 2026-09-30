@@ -25,9 +25,12 @@ class Pararius(RentProviderInterface):
         url = f'{self.BASE}/apartments/{self._city}/{self._min_price}-{self._max_price}'
 
         html = ''
+        last_status = None
+
         for imp in ['chrome131', 'chrome124', 'chrome110', 'chrome99', 'safari15_3']:
             try:
                 r = curl_req.get(url, headers=self._header, impersonate=imp)
+                last_status = r.status_code
             except Exception as e:
                 print(f'    [debug] Pararius: {imp} not supported ({e})')
                 continue
@@ -36,9 +39,11 @@ class Pararius(RentProviderInterface):
                 html = r.text
                 break
 
-        print(f'    [debug] Pararius (curl_cffi): {len(html)} bytes')
-
-        if not html:
+        if html:
+            print(f'    [debug] Pararius (curl_cffi): {len(html)} bytes')
+        else:
+            status_info = f'HTTP {last_status}' if last_status else 'connection failure'
+            print(f'    [debug] Pararius: challenged or blocked ({status_info})')
             return []
 
         soup = BeautifulSoup(html, 'lxml')

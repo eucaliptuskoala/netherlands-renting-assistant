@@ -81,10 +81,13 @@ Ranked by practicality for this codebase:
   - Database schema normalized (`users`, `user_listings`, and master catalog `seen_listings`).
   - Historical data (530 listings) 100% migrated to owner's profile with zero data loss.
   - Step-by-step onboarding conversation wizard in Telegram bot (`bot.py`) for new users and reusable via `⚙️ Settings` -> `✏️ Change Settings`.
-  - ScrapingBee completely retired; Pararius relies solely on `curl_cffi` TLS impersonation.
   - Batched database persistence (`save_and_assign_listings`) in a single connection & transaction.
   - Scraper runs partitioned by exact user budget profiles to eliminate page-1 starvation.
+- Scraper robustness fixes:
+  - Funda: resolved HTTP 404 by migrating URL from deprecated `/en/huur/` to `/huur/`; updated price parsing to use container-scoped regex matching modern DOM cards.
+  - Xior: resolved `ReferenceError` crash by switching bare identifier lookup to `window.xiorajax?.ajaxurl`.
+  - Pararius: improved telemetry to clearly log Cloudflare challenge/status codes on datacenter runners.
 - Quality tooling: Ruff linter + mypy passing cleanly across all files.
-- Next steps: Deploy updated webhook to Render and let the friend start the bot via `/start`!
+- Next steps: Deploy updated webhook to Render or test GitHub Actions monitor run.
 
 

@@ -27,7 +27,7 @@ class Xior(RentProviderInterface):
     def __init__(self, city="eindhoven", price=[0, 9000], header=None):
         super().__init__(city, price)
 
-    def Run(self):
+    def Run(self):  # noqa: N802
         houses = []
         try:
             with sync_playwright() as pw:
@@ -89,13 +89,13 @@ class Xior(RentProviderInterface):
         page.goto(prop["url"], wait_until="load", timeout=30000)
         self._accept_cookies(page)
 
-        page_id = str(page.evaluate("window.xior?.page_id") or "")
+        page_id = str(page.evaluate('window.xior?.page_id') or '')
         semester_id = str(
-            page.evaluate("document.getElementById('yardi-semester')?.value") or ""
+            page.evaluate("document.getElementById('yardi-semester')?.value") or ''
         )
-        ajax_url = str(page.evaluate("xiorajax?.ajaxurl") or "")
+        ajax_url = str(page.evaluate('window.xiorajax?.ajaxurl') or '')
         building_name = str(
-            page.evaluate("window.xior?.building_name") or prop["name"]
+            page.evaluate('window.xior?.building_name') or prop['name']
         )
 
         if not all([page_id, semester_id, ajax_url]):
