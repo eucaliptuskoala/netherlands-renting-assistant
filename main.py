@@ -7,11 +7,7 @@ import requests
 from dotenv import load_dotenv
 
 import storage
-from funda import Funda
-from kamernet import Kamernet
-from pararius import Pararius
-from vestide import Vestide
-from xior import Xior
+from scrapers import Funda, Kamernet, Pararius, Vestide, Xior
 
 load_dotenv()
 

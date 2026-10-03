@@ -10,10 +10,10 @@ class RentProviderInterface:
         self._max_price = price[1]  # Upper bound for monthly rent
         self._city = city  # City to search in (e.g. "eindhoven")
 
-    def _isPriceMatched(self, price):
+    def _isPriceMatched(self, price):  # noqa: N802
         """Check if a listing's price falls within the configured range."""
         return self._min_price <= price <= self._max_price
 
-    def Run(self):
+    def Run(self):  # noqa: N802
         """Template method — each provider must implement this. Should return a list of House objects."""
         pass

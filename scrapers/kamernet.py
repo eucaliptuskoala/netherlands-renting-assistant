@@ -3,8 +3,8 @@ import re
 
 from curl_cffi import requests as curl_req
 
-from interface import RentProviderInterface
-from model import House
+from models import House
+from scrapers.base import RentProviderInterface
 
 _NEXT_DATA_RE = re.compile(
     r'<script id="__NEXT_DATA__" type="application/json"[^>]*>(.*?)</script>',
@@ -18,12 +18,15 @@ class Kamernet(RentProviderInterface):
     def __init__(self, city="amsterdam", price=[0, 9000], header=None):
         super().__init__(city, price)
         self._header = header or {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            ),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
 
-    def Run(self):
+    def Run(self):  # noqa: N802
         slug = f"huurwoningen-{self._city}"
         params = "pageNo=1&searchView=1&listingTypes=1,2,4&sort=1"
         url = f"{self.BASE}/huren/{slug}?{params}"

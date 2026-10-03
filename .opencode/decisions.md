@@ -64,5 +64,15 @@
   4. Enforce `cur.rowcount > 0` checks in `storage.update_status()`.
 - **Consequence**: Users can browse saved collections sequentially, change listing statuses without losing their position, and never get trapped in duplicate listing loops.
 
+## ADR-9: Modular Package Architecture Reorganization (October 2026)
+
+- **Context**: All modules were flat in the repository root (`model.py`, `interface.py`, 5 scrapers, `storage.py`), cluttering the workspace and obscuring domain boundaries.
+- **Decision**:
+  1. Organize code into domain packages: `models/` (`house.py`), `scrapers/` (`base.py`, providers), and `storage/` (`database.py`).
+  2. Maintain `storage/__init__.py` re-exporting all database APIs to ensure 100% backward compatibility for existing callers.
+  3. Keep `main.py` and `bot.py` at the root as entry points to avoid breaking Render and GitHub Actions configurations.
+- **Consequence**: Clean, decoupled architecture with clear separation of responsibilities, ready for integrating new services (e.g. AI assistance).
+
+
 
 

@@ -2,8 +2,8 @@ import re
 
 from curl_cffi import requests as curl_req
 
-from interface import RentProviderInterface
-from model import House
+from models import House
+from scrapers.base import RentProviderInterface
 
 
 class Vestide(RentProviderInterface):
@@ -12,12 +12,15 @@ class Vestide(RentProviderInterface):
     def __init__(self, city="eindhoven", price=[0, 9000], header=None):
         super().__init__(city, price)
         self._header = header or {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "Accept": "application/json",
-            "Accept-Language": "en-US,en;q=0.9",
+            'User-Agent': (
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            ),
+            'Accept': 'application/json',
+            'Accept-Language': 'en-US,en;q=0.9',
         }
 
-    def Run(self):
+    def Run(self):  # noqa: N802
         url = f"{self.BASE}/api/accommodation/getlivingspaces/?LanguageCode=en&Skip=0&Take=999"
 
         try:

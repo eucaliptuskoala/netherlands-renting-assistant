@@ -1,7 +1,7 @@
 from playwright.sync_api import sync_playwright
 
-from interface import RentProviderInterface
-from model import House
+from models import House
+from scrapers.base import RentProviderInterface
 
 
 def _first_of(obj, keys):

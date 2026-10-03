@@ -27,17 +27,15 @@ Scrapes Dutch rental websites (Funda.nl and Pararius.com) and sends new listings
 - Two entry points: `main.py` (cron scraper) and `bot.py` (interactive Telegram bot)
 - Deduplication via Postgres upsert
 
-### Key Files
+### Key Packages & Files
 
-| File | Role |
+| Path | Role |
 |------|------|
-| `interface.py` | Abstract base class for all scrapers |
-| `funda.py` | Funda scraper (curl_cffi, Akamai bypass) |
-| `pararius.py` | Pararius scraper (ScrapingBee + curl_cffi fallback) |
-| `model.py` | House dataclass |
-| `storage.py` | Supabase/Postgres CRUD |
 | `main.py` | GitHub Actions entry point — scrape + notify |
-| `bot.py` | Telegram webhook bot — interactive review |
+| `bot.py` | Telegram webhook bot (Render) — interactive review |
+| `models/` | Data models (`models/house.py`) |
+| `scrapers/` | Scraper package (`base.py`, `funda.py`, `kamernet.py`, `pararius.py`, `vestide.py`, `xior.py`) |
+| `storage/` | Database package (`storage/database.py`, backward-compatible re-exports in `storage/__init__.py`) |
 
 ## Future Scraping Options (if ScrapingBee credits run out)
 
@@ -91,7 +89,10 @@ Ranked by practicality for this codebase:
   - Fixed infinite loop when accepting already accepted listings by adding dedicated contextual keyboards (`browse_accepted_keyboard`, `browse_rejected_keyboard`, `new_listing_keyboard`).
   - Added index-based pagination (`current_index` + `➡️ Next`) for browsing saved listings without getting trapped on the first item.
   - Hardened `storage.update_status()` to check `cur.rowcount > 0`.
+- Codebase reorganization into modular domain packages (October 2026):
+  - Created `models/` (`house.py`), `scrapers/` (`base.py`, `funda.py`, `kamernet.py`, `pararius.py`, `vestide.py`, `xior.py`), and `storage/` (`database.py`).
+  - Root entry points `main.py` and `bot.py` preserved for Render and GitHub Actions compatibility.
 - Quality tooling: Ruff linter + mypy passing cleanly across all files.
-- Next steps: Deploy updated webhook to Render or test GitHub Actions monitor run.
+- Next steps: Implement Gemini AI Cover Letter Generator (`services/ai_assistant.py`) and user bio management.
 
 

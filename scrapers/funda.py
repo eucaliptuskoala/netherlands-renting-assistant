@@ -3,8 +3,8 @@ import re
 from bs4 import BeautifulSoup
 from curl_cffi import requests as curl_req
 
-from interface import RentProviderInterface
-from model import House
+from models import House
+from scrapers.base import RentProviderInterface
 
 
 class Funda(RentProviderInterface):
