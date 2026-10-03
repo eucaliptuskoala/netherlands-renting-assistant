@@ -54,4 +54,15 @@
   3. Pararius: provide transparent diagnostic logging for Cloudflare challenge responses.
 - **Consequence**: Restored Funda listing discovery (15+ listings per run) and prevented crawler aborts on Xior.
 
+## ADR-8: Context-Aware Keyboards & Listing Browse Pagination (October 2026)
+
+- **Context**: When browsing accepted listings, users were presented with `[Accept, Reject]` buttons and no pagination controls. Tapping `Accept` re-applied the `accepted` status to the first item, querying `listings[0]` and causing an infinite duplicate loop on the same listing.
+- **Decision**:
+  1. Differentiate review vs. browse flows with dedicated keyboards (`new_listing_keyboard`, `browse_accepted_keyboard`, `browse_rejected_keyboard`).
+  2. Implement index-based pagination (`current_index` + `➡️ Next`) for browsing saved collections.
+  3. Gracefully handle taps on `Accept` in `accepted` mode by advancing to the next item instead of reloading the current one.
+  4. Enforce `cur.rowcount > 0` checks in `storage.update_status()`.
+- **Consequence**: Users can browse saved collections sequentially, change listing statuses without losing their position, and never get trapped in duplicate listing loops.
+
+
 

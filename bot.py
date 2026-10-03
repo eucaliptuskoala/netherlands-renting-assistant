@@ -43,8 +43,12 @@ BTN_SETTINGS = '\u2699\ufe0f Settings'
 BTN_CHANGE_SETTINGS = '\u270f\ufe0f Change Settings'
 BTN_CANCEL = '\u274c Cancel'
 
-BTN_ACCEPT = '\u2705 Accept'
-BTN_REJECT = '\u274c Reject'
+BTN_ACCEPT = '✅ Accept'
+BTN_REJECT = '❌ Reject'
+BTN_NEXT = '➡️ Next'
+BTN_MENU = '🏠 Main Menu'
+BTN_MOVE_REJECTED = '❌ Move to Rejected'
+BTN_MOVE_ACCEPTED = '✅ Move to Accepted'
 
 
 def routing_keyboard():
@@ -67,9 +71,32 @@ def settings_keyboard():
     )
 
 
-def accept_reject_keyboard():
+def new_listing_keyboard():
     return ReplyKeyboardMarkup(
-        [[KeyboardButton(BTN_ACCEPT), KeyboardButton(BTN_REJECT)]],
+        [
+            [KeyboardButton(BTN_ACCEPT), KeyboardButton(BTN_REJECT)],
+            [KeyboardButton(BTN_MENU)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def browse_accepted_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_NEXT), KeyboardButton(BTN_MOVE_REJECTED)],
+            [KeyboardButton(BTN_MENU)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def browse_rejected_keyboard():
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_NEXT), KeyboardButton(BTN_MOVE_ACCEPTED)],
+            [KeyboardButton(BTN_MENU)],
+        ],
         resize_keyboard=True,
     )
 
@@ -326,32 +353,54 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(text, reply_markup=settings_keyboard())
 
 
-async def _show_listing(update, context, flow, listings):
-    """Shared logic: show first listing from user's list and set context."""
-    if not listings:
+async def _show_listing(update, context, flow, listings, index=0):
+    """Shared logic: show listing at index from user's list and set context."""
+    if not listings or index >= len(listings):
         if context.user_data is not None:
             context.user_data.pop('current_listing_id', None)
             context.user_data.pop('current_flow', None)
+            context.user_data.pop('current_index', None)
 
-        labels = {'new': 'new listings', 'accepted': 'accepted listings', 'rejected': 'rejected listings'}
+        labels = {
+            'new': 'new listings',
+            'accepted': 'accepted listings',
+            'rejected': 'rejected listings',
+        }
         if update.message:
+            msg = (
+                'All caught up! No new listings to review.'
+                if flow == 'new'
+                else f'End of {labels.get(flow, "listings")}.'
+            )
             await update.message.reply_text(
-                f'No {labels.get(flow, "listings")} to review.',
+                msg,
                 reply_markup=routing_keyboard(),
             )
         return False
 
-    listing = listings[0]
+    listing = listings[index]
     if context.user_data is not None:
         context.user_data['current_listing_id'] = listing['listing_id']
         context.user_data['current_flow'] = flow
+        context.user_data['current_index'] = index
 
-    icon = STATUS_ICONS.get(flow, '\U0001f3e0')
+    icon = STATUS_ICONS.get(flow, '🏠')
+    total = len(listings)
+    counter = f' ({index + 1}/{total})' if total > 1 else ''
+
+    if flow == 'new':
+        markup = new_listing_keyboard()
+    elif flow == 'accepted':
+        markup = browse_accepted_keyboard()
+    elif flow == 'rejected':
+        markup = browse_rejected_keyboard()
+    else:
+        markup = routing_keyboard()
 
     if update.message:
         await update.message.reply_text(
-            f'{format_listing(listing)}\nStatus: {icon} {flow.title()}',
-            reply_markup=accept_reject_keyboard(),
+            f'{format_listing(listing)}\nStatus: {icon} {flow.title()}{counter}',
+            reply_markup=markup,
         )
     return True
 
@@ -361,7 +410,7 @@ async def cmd_new(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     _ensure_user(update)
     listings = storage.get_listings_by_status('new', chat_id=update.effective_chat.id)
-    await _show_listing(update, context, 'new', listings)
+    await _show_listing(update, context, 'new', listings, index=0)
 
 
 async def cmd_accepted(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -369,7 +418,7 @@ async def cmd_accepted(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     _ensure_user(update)
     listings = storage.get_listings_by_status('accepted', chat_id=update.effective_chat.id)
-    await _show_listing(update, context, 'accepted', listings)
+    await _show_listing(update, context, 'accepted', listings, index=0)
 
 
 async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,7 +426,7 @@ async def cmd_rejected(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     _ensure_user(update)
     listings = storage.get_listings_by_status('rejected', chat_id=update.effective_chat.id)
-    await _show_listing(update, context, 'rejected', listings)
+    await _show_listing(update, context, 'rejected', listings, index=0)
 
 
 BUTTON_HANDLERS = {
@@ -402,14 +451,41 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handler(update, context)
         return
 
-    if text in (BTN_ACCEPT, BTN_REJECT):
-        user_data = context.user_data if context.user_data is not None else {}
-        listing_id = user_data.get('current_listing_id')
-        flow = user_data.get('current_flow')
+    if text == BTN_MENU:
+        if context.user_data is not None:
+            context.user_data.pop('current_listing_id', None)
+            context.user_data.pop('current_flow', None)
+            context.user_data.pop('current_index', None)
+        await update.message.reply_text(
+            'Main Menu:',
+            reply_markup=routing_keyboard(),
+        )
+        return
 
-        if not listing_id or not flow:
+    user_data = context.user_data if context.user_data is not None else {}
+    listing_id = user_data.get('current_listing_id')
+    flow = user_data.get('current_flow')
+    index = user_data.get('current_index', 0)
+
+    # 1. Handling Next in browse mode (accepted / rejected)
+    if text == BTN_NEXT:
+        if not flow or flow not in ('accepted', 'rejected'):
             await update.message.reply_text(
-                'No active listing to review. Tap \U0001f3e0 New to start.',
+                'No active list to browse. Tap 🏠 New to start.',
+                reply_markup=routing_keyboard(),
+            )
+            return
+
+        listings = storage.get_listings_by_status(flow, chat_id=chat_id)
+        next_index = index + 1
+        await _show_listing(update, context, flow, listings, index=next_index)
+        return
+
+    # 2. Handling New flow (Accept / Reject)
+    if flow == 'new' and text in (BTN_ACCEPT, BTN_REJECT):
+        if not listing_id:
+            await update.message.reply_text(
+                'No active listing to review. Tap 🏠 New to start.',
                 reply_markup=routing_keyboard(),
             )
             return
@@ -420,32 +496,50 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not success:
             await update.message.reply_text(
                 'Could not save your decision. Please try again.',
-                reply_markup=accept_reject_keyboard(),
+                reply_markup=new_listing_keyboard(),
             )
             return
 
-        remaining = storage.get_listings_by_status(flow, chat_id=chat_id)
-        if remaining:
-            await _show_listing(update, context, flow, remaining)
-        else:
-            if context.user_data is not None:
-                context.user_data.pop('current_listing_id', None)
-                context.user_data.pop('current_flow', None)
+        remaining = storage.get_listings_by_status('new', chat_id=chat_id)
+        await _show_listing(update, context, 'new', remaining, index=0)
+        return
 
-            labels = {
-                'new': 'new listings',
-                'accepted': 'accepted listings',
-                'rejected': 'rejected listings',
-            }
-            await update.message.reply_text(
-                f'All done! No more {labels.get(flow, "listings")}.',
-                reply_markup=routing_keyboard(),
-            )
-    else:
-        await update.message.reply_text(
-            'Use the buttons below to navigate.',
-            reply_markup=routing_keyboard(),
-        )
+    # 3. Handling Accepted flow
+    if flow == 'accepted':
+        if text in (BTN_MOVE_REJECTED, BTN_REJECT):
+            if listing_id:
+                storage.update_status(listing_id, 'rejected', chat_id=chat_id)
+            remaining = storage.get_listings_by_status('accepted', chat_id=chat_id)
+            await _show_listing(update, context, 'accepted', remaining, index=index)
+            return
+
+        # If user taps Accept while already in accepted, treat it gracefully as Next
+        if text == BTN_ACCEPT:
+            listings = storage.get_listings_by_status('accepted', chat_id=chat_id)
+            next_index = index + 1
+            await _show_listing(update, context, 'accepted', listings, index=next_index)
+            return
+
+    # 4. Handling Rejected flow
+    if flow == 'rejected':
+        if text in (BTN_MOVE_ACCEPTED, BTN_ACCEPT):
+            if listing_id:
+                storage.update_status(listing_id, 'accepted', chat_id=chat_id)
+            remaining = storage.get_listings_by_status('rejected', chat_id=chat_id)
+            await _show_listing(update, context, 'rejected', remaining, index=index)
+            return
+
+        # If user taps Reject while already in rejected, treat it gracefully as Next
+        if text == BTN_REJECT:
+            listings = storage.get_listings_by_status('rejected', chat_id=chat_id)
+            next_index = index + 1
+            await _show_listing(update, context, 'rejected', listings, index=next_index)
+            return
+
+    await update.message.reply_text(
+        'Use the buttons below to navigate.',
+        reply_markup=routing_keyboard(),
+    )
 
 
 def main():

@@ -420,6 +420,13 @@ def update_status(listing_id: str, status: str, chat_id: int) -> bool:
                 (status, chat_id, listing_id),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                print(
+                    f'[{datetime.now():%H:%M:%S}] update_status: no matching listing {listing_id} for chat {chat_id}',
+                    file=sys.stderr,
+                )
+                return False
+
             return True
     except Exception as e:
         print(f'[{datetime.now():%H:%M:%S}] update_status failed: {e}', file=sys.stderr)

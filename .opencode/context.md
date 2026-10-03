@@ -87,6 +87,10 @@ Ranked by practicality for this codebase:
   - Funda: resolved HTTP 404 by migrating URL from deprecated `/en/huur/` to `/huur/`; updated price parsing to use container-scoped regex matching modern DOM cards.
   - Xior: resolved `ReferenceError` crash by switching bare identifier lookup to `window.xiorajax?.ajaxurl`.
   - Pararius: improved telemetry to clearly log Cloudflare challenge/status codes on datacenter runners.
+- Bot navigation & listing review fixes (October 2026):
+  - Fixed infinite loop when accepting already accepted listings by adding dedicated contextual keyboards (`browse_accepted_keyboard`, `browse_rejected_keyboard`, `new_listing_keyboard`).
+  - Added index-based pagination (`current_index` + `➡️ Next`) for browsing saved listings without getting trapped on the first item.
+  - Hardened `storage.update_status()` to check `cur.rowcount > 0`.
 - Quality tooling: Ruff linter + mypy passing cleanly across all files.
 - Next steps: Deploy updated webhook to Render or test GitHub Actions monitor run.
 
