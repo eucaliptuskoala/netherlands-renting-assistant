@@ -73,6 +73,35 @@
   3. Keep `main.py` and `bot.py` at the root as entry points to avoid breaking Render and GitHub Actions configurations.
 - **Consequence**: Clean, decoupled architecture with clear separation of responsibilities, ready for integrating new services (e.g. AI assistance).
 
+## ADR-10: Gemini AI Cover Letter Generator & Applicant Bio Management (October 2026)
+
+- **Context**: Dutch rental listings receive hundreds of responses within minutes. To secure a viewing, applicants need professional, tailored motivation letters in Dutch and English addressing makelaar requirements (income, guarantor, non-smoker, move-in readiness). Additionally, user applicant situations (student vs. expat professional) must be preserved in their profile.
+- **Decision**:
+  1. Add optional free-form `bio` column to `users` table via graceful auto-migration in `storage.init_db()` (`ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;`).
+  2. Provide `📝 Edit Bio` within `⚙️ Settings` and via `/bio` command in Telegram, allowing users to freely describe their employment, income, and guarantor situation.
+  3. Integrate Google GenAI SDK (`google-genai>=2.3.0`) with model cascading (`gemini-3.5-flash` -> `gemini-3.5-flash-lite` -> `gemini-3.8-flash`) in `services/ai_assistant.py` to ensure high availability and resistance to temporary 503 spikes.
+  4. Prompt design: generate Dutch version first, English version second, both formatted in markdown code blocks for single-tap clipboard copying in Telegram.
+  5. Add `✍️ Cover Letter` action button to `new_listing_keyboard` and `browse_accepted_keyboard` without mutating the user's active listing queue index.
+- **Consequence**: Users can generate personalized, high-converting bilingual application letters in seconds with a single tap, drastically improving viewing invitation rates while keeping operational API costs essentially zero on Google AI's free tier.
+
+## ADR-11: Modular Testing Suite with Unit and Integration Isolation (October 2026)
+
+- **Context**: The application interacts with multiple external APIs and third-party systems (Google Gemini AI, Supabase PostgreSQL, Telegram Bot API, and real estate portals). Lack of structured tests risked silent regressions during scraper DOM shifts or schema updates.
+- **Decision**:
+  1. Adopt `pytest` and `pytest-mock` with explicit test markers (`unit` vs `integration`).
+  2. Implement unit tests with comprehensive mocking to guarantee fast, 100% offline test execution:
+     - `services/ai_assistant.py`: mock Gemini client, testing prompt construction, model cascading fallback on 503 errors, and missing key/bio handling.
+     - `scrapers/`: mock HTTP responses to validate parser robustness (Vestide JSON, Funda HTML, price filters).
+     - `main.py`: mock `requests.post` to validate Telegram notification status and exception handling.
+     - `bot.py`: test formatting helpers and keyboard configurations.
+  3. Implement integration tests verifying real API contracts against live external services:
+     - `tests/integration/test_gemini_integration.py`: live validation of bilingual cover letter generation.
+     - `tests/integration/test_storage_integration.py`: live connection and query verification against Supabase.
+     - Both tests gracefully skip via `pytest.mark.skipif` when environment secrets are absent.
+- **Consequence**: Full automated verification of core business flows and third-party API contracts, allowing rapid and safe evolution of scrapers and bot features.
+
+
+
 
 
 

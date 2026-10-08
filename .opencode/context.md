@@ -91,8 +91,18 @@ Ranked by practicality for this codebase:
   - Hardened `storage.update_status()` to check `cur.rowcount > 0`.
 - Codebase reorganization into modular domain packages (October 2026):
   - Created `models/` (`house.py`), `scrapers/` (`base.py`, `funda.py`, `kamernet.py`, `pararius.py`, `vestide.py`, `xior.py`), and `storage/` (`database.py`).
+  - Created `services/` (`services/ai_assistant.py`) for decoupled business and AI services.
   - Root entry points `main.py` and `bot.py` preserved for Render and GitHub Actions compatibility.
-- Quality tooling: Ruff linter + mypy passing cleanly across all files.
-- Next steps: Implement Gemini AI Cover Letter Generator (`services/ai_assistant.py`) and user bio management.
+- Gemini AI Cover Letter Generator & Applicant Bio (October 2026):
+  - Added `bio` profile field to `users` table via graceful auto-migration in `storage.init_db()`.
+  - Added `📝 Edit Bio` command and button in `⚙️ Settings` to capture applicant background (employment, studies, income guarantor, habits).
+  - Integrated `google-genai` with model cascading (`gemini-3.5-flash` -> `gemini-3.5-flash-lite` -> `gemini-3.8-flash`) to generate professional Dutch and English motivation letters formatted in single-tap copyable code blocks.
+  - Added `✍️ Cover Letter` button under listings without mutating the user's active queue position.
+- Quality tooling & Automated Testing (October 2026):
+  - Configured `pytest` and `pytest-mock` with explicit `unit` and `integration` markers in `pyproject.toml`.
+  - Comprehensive unit test suite covering AI assistant prompt/fallback logic, scraper parsing (Vestide, Funda), Telegram alerts, and bot formatters/keyboards (18 unit tests, 100% offline, <0.6s).
+  - Integration test suite testing live Google Gemini API (bilingual generation) and live Supabase PostgreSQL (schema & query validation) with graceful conditional skipping when credentials are unset.
+  - Ruff linter passing cleanly across all repository files with zero errors.
+- Next steps: Monitor Render bot logs and gather user feedback on makelaar response rates.
 
 

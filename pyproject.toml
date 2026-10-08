@@ -14,3 +14,12 @@ select = ["E", "F", "I", "N", "W", "UP"]
 python_version = "3.11"
 strict = false
 ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+markers = [
+    "unit: Isolated fast unit tests with mocks",
+    "integration: Integration tests requiring external APIs or live network",
+]

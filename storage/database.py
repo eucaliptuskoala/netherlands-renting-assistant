@@ -52,8 +52,9 @@ def init_db(default_chat_id: int | None = None) -> bool:
                 '''
             )
 
-            # Ensure is_onboarded column exists on existing installations
+            # Ensure is_onboarded and bio columns exist on existing installations
             cur.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS is_onboarded BOOLEAN NOT NULL DEFAULT true;')
+            cur.execute('ALTER TABLE users ADD COLUMN IF NOT EXISTS bio TEXT;')
 
             # 2. Create user_listings junction table
             cur.execute(
@@ -149,7 +150,7 @@ def get_or_create_user(
                       first_name = COALESCE(excluded.first_name, users.first_name),
                       updated_at = now()
                 RETURNING id, telegram_chat_id, username, first_name, city,
-                          min_price, max_price, is_active, is_onboarded;
+                          min_price, max_price, is_active, is_onboarded, bio;
                 ''',
                 (chat_id, username, first_name, default_onboarded),
             )
@@ -166,6 +167,7 @@ def get_or_create_user(
                     'max_price': row[6],
                     'is_active': row[7],
                     'is_onboarded': row[8],
+                    'bio': row[9] if len(row) > 9 else None,
                 }
             return None
     except Exception as e:
@@ -185,7 +187,8 @@ def get_active_users() -> list[dict[str, Any]]:
         with conn.cursor() as cur:
             cur.execute(
                 '''
-                SELECT id, telegram_chat_id, username, first_name, city, min_price, max_price, is_active, is_onboarded
+                SELECT id, telegram_chat_id, username, first_name, city,
+                       min_price, max_price, is_active, is_onboarded, bio
                 FROM users
                 WHERE is_active = true AND is_onboarded = true
                 ORDER BY id ASC;
@@ -203,6 +206,7 @@ def get_active_users() -> list[dict[str, Any]]:
                     'max_price': r[6],
                     'is_active': r[7],
                     'is_onboarded': r[8],
+                    'bio': r[9] if len(r) > 9 else None,
                 }
                 for r in rows
             ]
@@ -431,5 +435,64 @@ def update_status(listing_id: str, status: str, chat_id: int) -> bool:
     except Exception as e:
         print(f'[{datetime.now():%H:%M:%S}] update_status failed: {e}', file=sys.stderr)
         return False
+    finally:
+        conn.close()
+
+
+def update_user_bio(chat_id: int, bio: str) -> bool:
+    """Update applicant bio/profile text for a specific user."""
+    conn = _conn()
+    if not conn:
+        return False
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                UPDATE users
+                SET bio = %s, updated_at = now()
+                WHERE telegram_chat_id = %s;
+                ''',
+                (bio.strip(), chat_id),
+            )
+            conn.commit()
+            return cur.rowcount > 0
+    except Exception as e:
+        print(f'[{datetime.now():%H:%M:%S}] update_user_bio failed: {e}', file=sys.stderr)
+        return False
+    finally:
+        conn.close()
+
+
+def get_listing(listing_id: str) -> dict[str, Any] | None:
+    """Fetch single listing details from seen_listings catalog."""
+    conn = _conn()
+    if not conn:
+        return None
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                '''
+                SELECT listing_id, address, price, living_area, url, city
+                FROM seen_listings
+                WHERE listing_id = %s;
+                ''',
+                (listing_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {
+                'listing_id': row[0],
+                'address': row[1],
+                'price': row[2],
+                'living_area': row[3],
+                'url': row[4],
+                'city': row[5] or 'eindhoven',
+            }
+    except Exception as e:
+        print(f'[{datetime.now():%H:%M:%S}] get_listing failed: {e}', file=sys.stderr)
+        return None
     finally:
         conn.close()

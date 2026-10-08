@@ -12,6 +12,7 @@ from telegram.ext import (
     filters,
 )
 
+import services
 import storage
 
 load_dotenv()
@@ -49,6 +50,8 @@ BTN_NEXT = '➡️ Next'
 BTN_MENU = '🏠 Main Menu'
 BTN_MOVE_REJECTED = '❌ Move to Rejected'
 BTN_MOVE_ACCEPTED = '✅ Move to Accepted'
+BTN_COVER_LETTER = '✍️ Cover Letter'
+BTN_EDIT_BIO = '📝 Edit Bio'
 
 
 def routing_keyboard():
@@ -64,7 +67,7 @@ def routing_keyboard():
 def settings_keyboard():
     return ReplyKeyboardMarkup(
         [
-            [KeyboardButton(BTN_CHANGE_SETTINGS)],
+            [KeyboardButton(BTN_CHANGE_SETTINGS), KeyboardButton(BTN_EDIT_BIO)],
             [KeyboardButton(BTN_NEW), KeyboardButton(BTN_ACCEPTED), KeyboardButton(BTN_REJECTED)],
         ],
         resize_keyboard=True,
@@ -75,7 +78,7 @@ def new_listing_keyboard():
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(BTN_ACCEPT), KeyboardButton(BTN_REJECT)],
-            [KeyboardButton(BTN_MENU)],
+            [KeyboardButton(BTN_COVER_LETTER), KeyboardButton(BTN_MENU)],
         ],
         resize_keyboard=True,
     )
@@ -85,7 +88,7 @@ def browse_accepted_keyboard():
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(BTN_NEXT), KeyboardButton(BTN_MOVE_REJECTED)],
-            [KeyboardButton(BTN_MENU)],
+            [KeyboardButton(BTN_COVER_LETTER), KeyboardButton(BTN_MENU)],
         ],
         resize_keyboard=True,
     )
@@ -341,16 +344,47 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     city = user_profile['city'].title() if user_profile else 'Eindhoven'
     min_p = user_profile['min_price'] if user_profile else 400
     max_p = user_profile['max_price'] if user_profile else 1200
+    bio = user_profile.get('bio') if user_profile else None
+    bio_display = f'"{bio}"' if bio else 'Not set yet (tap 📝 Edit Bio below)'
 
     text = (
-        '\u2699\ufe0f Your Search Settings\n\n'
-        f'\U0001f4cd City: {city}\n'
-        f'\U0001f4b0 Budget: \u20ac{min_p} \u2014 \u20ac{max_p}\n\n'
-        f'\U0001f4ca Status: {stats["new"]} new | {stats["accepted"]} accepted | {stats["rejected"]} rejected\n\n'
-        'Tap \u270f\ufe0f Change Settings below to update your city and budget.'
+        '⚙️ Your Search Settings\n\n'
+        f'📍 City: {city}\n'
+        f'💰 Budget: €{min_p} — €{max_p}\n'
+        f'📝 Bio: {bio_display}\n\n'
+        f'📊 Status: {stats["new"]} new | {stats["accepted"]} accepted | {stats["rejected"]} rejected\n\n'
+        'Tap ✏️ Change Settings to change city/budget, or 📝 Edit Bio to update your applicant profile.'
     )
 
     await update.message.reply_text(text, reply_markup=settings_keyboard())
+
+
+async def cmd_bio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.effective_chat:
+        return
+
+    user_profile = _ensure_user(update)
+    current_bio = user_profile.get('bio') if user_profile else None
+    current_bio_text = f'\n\nCurrently set to:\n_{current_bio}_' if current_bio else ''
+
+    if context.user_data is not None:
+        context.user_data['waiting_for_bio'] = True
+
+    msg = (
+        '📝 *Applicant Bio / Profile*\n\n'
+        'Tell makelaars and landlords about yourself: your occupation/studies, '
+        'monthly income or guarantor, who is moving in, and any pets or smoking status.\n\n'
+        '💡 *Example:*\n'
+        '_"Master student at TU/e, quiet, non-smoker, no pets. Parents provide financial guarantee for the rent."_'
+        f'{current_bio_text}\n\n'
+        'Send your bio text below, or tap ❌ Cancel:'
+    )
+
+    await update.message.reply_text(
+        msg,
+        reply_markup=cancel_keyboard(),
+        parse_mode='Markdown',
+    )
 
 
 async def _show_listing(update, context, flow, listings, index=0):
@@ -435,6 +469,7 @@ BUTTON_HANDLERS = {
     BTN_REJECTED: cmd_rejected,
     BTN_SETTINGS: cmd_settings,
     BTN_CHANGE_SETTINGS: start_onboarding_flow,
+    BTN_EDIT_BIO: cmd_bio,
 }
 
 
@@ -449,6 +484,26 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     handler = BUTTON_HANDLERS.get(text)
     if handler:
         await handler(update, context)
+        return
+
+    if context.user_data and context.user_data.get('waiting_for_bio'):
+        if text == BTN_CANCEL or text == '/cancel':
+            context.user_data.pop('waiting_for_bio', None)
+            await update.message.reply_text(
+                'Bio edit cancelled.',
+                reply_markup=settings_keyboard(),
+            )
+            return
+
+        bio_text = text.strip()
+        storage.update_user_bio(chat_id, bio_text)
+        context.user_data.pop('waiting_for_bio', None)
+
+        await update.message.reply_text(
+            '✅ Applicant bio updated successfully!\n\n'
+            'Gemini will now tailor your cover letters using your profile information.',
+            reply_markup=settings_keyboard(),
+        )
         return
 
     if text == BTN_MENU:
@@ -466,6 +521,55 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     listing_id = user_data.get('current_listing_id')
     flow = user_data.get('current_flow')
     index = user_data.get('current_index', 0)
+
+    # Cover Letter generation with Gemini
+    if text == BTN_COVER_LETTER:
+        if not listing_id:
+            await update.message.reply_text(
+                'No active listing selected. Tap 🏠 New or ✅ Accepted to open a listing first.',
+                reply_markup=routing_keyboard(),
+            )
+            return
+
+        listing = storage.get_listing(listing_id)
+        if not listing:
+            await update.message.reply_text(
+                'Listing details could not be found.',
+                reply_markup=routing_keyboard(),
+            )
+            return
+
+        user_profile = storage.get_or_create_user(chat_id)
+        status_msg = await update.message.reply_text('✍️ Generating cover letter with Gemini...')
+
+        cover_letter = services.generate_cover_letter(user_profile, listing)
+
+        if flow == 'new':
+            markup = new_listing_keyboard()
+        elif flow == 'accepted':
+            markup = browse_accepted_keyboard()
+        elif flow == 'rejected':
+            markup = browse_rejected_keyboard()
+        else:
+            markup = routing_keyboard()
+
+        try:
+            await status_msg.delete()
+        except Exception:
+            pass
+
+        try:
+            await update.message.reply_text(
+                cover_letter,
+                parse_mode='Markdown',
+                reply_markup=markup,
+            )
+        except Exception:
+            await update.message.reply_text(
+                cover_letter,
+                reply_markup=markup,
+            )
+        return
 
     # 1. Handling Next in browse mode (accepted / rejected)
     if text == BTN_NEXT:
@@ -583,6 +687,7 @@ def main():
     application.add_handler(CommandHandler('accepted', cmd_accepted))
     application.add_handler(CommandHandler('rejected', cmd_rejected))
     application.add_handler(CommandHandler('settings', cmd_settings))
+    application.add_handler(CommandHandler('bio', cmd_bio))
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
