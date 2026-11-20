@@ -1,13 +1,17 @@
+import os
+
 from playwright.sync_api import sync_playwright
 
 from models import House
 from scrapers.base import RentProviderInterface
 
+DEFAULT_OBSCURA_CDP_URL = 'http://127.0.0.1:9222'
+
 
 def _first_of(obj, keys):
     for k in keys:
         v = obj.get(k)
-        if v is not None and v != "":
+        if v is not None and v != '':
             return v
     return None
 
@@ -15,70 +19,99 @@ def _first_of(obj, keys):
 class Xior(RentProviderInterface):
     PROPERTIES = [
         {
-            "name": "Kronehoefstraat",
-            "url": "https://www.xiorstudenthousing.eu/netherlands/eindhoven/kronehoefstraat-student-accommodation/",
+            'name': 'Kronehoefstraat',
+            'url': 'https://www.xiorstudenthousing.eu/netherlands/eindhoven/kronehoefstraat-student-accommodation/',
         },
         {
-            "name": "Zernikestraat",
-            "url": "https://www.xiorstudenthousing.eu/netherlands/eindhoven/zernikestraat-student-accommodation/",
+            'name': 'Zernikestraat',
+            'url': 'https://www.xiorstudenthousing.eu/netherlands/eindhoven/zernikestraat-student-accommodation/',
         },
     ]
 
-    def __init__(self, city="eindhoven", price=[0, 9000], header=None):
+    def __init__(self, city='eindhoven', price=[0, 9000], header=None, cdp_url=None):
         super().__init__(city, price)
+        self._cdp_url = cdp_url or os.environ.get('OBSCURA_CDP_URL', DEFAULT_OBSCURA_CDP_URL)
+
+    def _get_browser(self, pw):
+        if self._cdp_url:
+            try:
+                print(f'    [debug] Xior: connecting to Obscura via CDP at {self._cdp_url}', flush=True)
+                return pw.chromium.connect_over_cdp(self._cdp_url)
+            except Exception as e:
+                print(
+                    f'    [debug] Xior: Obscura connection failed ({e}), falling back to local Chromium',
+                    flush=True,
+                )
+
+        print('    [debug] Xior: launching local Chromium', flush=True)
+        return pw.chromium.launch(
+            headless=True,
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+            ],
+        )
 
     def Run(self):  # noqa: N802
         houses = []
         try:
             with sync_playwright() as pw:
-                browser = pw.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-setuid-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-gpu",
-                    ],
-                )
-                page = browser.new_page(
-                    user_agent=(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/131.0.0.0 Safari/537.36"
-                    ),
-                    viewport={"width": 1280, "height": 720},
-                )
+                browser = self._get_browser(pw)
 
-                page.route(
-                    "**/*",
-                    lambda route: route.abort()
-                    if "challenges.cloudflare.com" in route.request.url
-                    else route.continue_(),
-                )
+                try:
+                    context = browser.new_context(
+                        user_agent=(
+                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                            'AppleWebKit/537.36 (KHTML, like Gecko) '
+                            'Chrome/131.0.0.0 Safari/537.36'
+                        ),
+                        viewport={'width': 1280, 'height': 720},
+                    )
+                except Exception:
+                    context = browser.contexts[0] if getattr(browser, 'contexts', None) else browser
+
+                page = context.new_page()
+
+                try:
+                    page.route(
+                        '**/*',
+                        lambda route: route.abort()
+                        if 'challenges.cloudflare.com' in route.request.url
+                        else route.continue_(),
+                    )
+                except Exception as e:
+                    print(f'    [debug] Xior: route interception skipped ({e})', flush=True)
 
                 for prop in self.PROPERTIES:
                     try:
                         prop_houses = self._scrape_property(page, prop)
                         houses.extend(prop_houses)
                         print(
-                            f"    [debug] Xior {prop['name']}: {len(prop_houses)} listing(s)",
+                            f'    [debug] Xior {prop["name"]}: {len(prop_houses)} listing(s)',
                             flush=True,
                         )
                     except Exception as e:
                         print(
-                            f"    [error] Xior {prop['name']}: {e}",
+                            f'    [error] Xior {prop["name"]}: {e}',
                             flush=True,
                         )
 
+                try:
+                    page.close()
+                except Exception:
+                    pass
+
                 browser.close()
         except Exception as e:
-            print(f"    [error] Xior browser startup: {e}", flush=True)
+            print(f'    [error] Xior browser startup: {e}', flush=True)
 
         return houses
 
     def _accept_cookies(self, page):
         try:
-            btn = page.query_selector(".cky-btn-accept")
+            btn = page.query_selector('.cky-btn-accept')
             if btn:
                 btn.click()
                 page.wait_for_timeout(500)
@@ -86,7 +119,7 @@ class Xior(RentProviderInterface):
             pass
 
     def _scrape_property(self, page, prop):
-        page.goto(prop["url"], wait_until="load", timeout=30000)
+        page.goto(prop['url'], wait_until='load', timeout=30000)
         self._accept_cookies(page)
 
         page_id = str(page.evaluate('window.xior?.page_id') or '')
@@ -100,12 +133,12 @@ class Xior(RentProviderInterface):
 
         if not all([page_id, semester_id, ajax_url]):
             debug = (
-                f"page_id={page_id} "
-                f"semester={bool(semester_id)} "
-                f"ajax={bool(ajax_url)}"
+                f'page_id={page_id} '
+                f'semester={bool(semester_id)} '
+                f'ajax={bool(ajax_url)}'
             )
             print(
-                f"    [debug] Xior {prop['name']}: missing metadata {debug}",
+                f'    [debug] Xior {prop["name"]}: missing metadata {debug}',
                 flush=True,
             )
             return []
@@ -127,7 +160,7 @@ class Xior(RentProviderInterface):
 
         if not rooms:
             print(
-                f"    [debug] Xior {prop['name']}: no room types found",
+                f'    [debug] Xior {prop["name"]}: no room types found',
                 flush=True,
             )
             return []
@@ -150,46 +183,46 @@ class Xior(RentProviderInterface):
                 }
             }""",
                 {
-                    "page_id": page_id,
-                    "room_id": room_id,
-                    "semester_id": semester_id,
-                    "ajax_url": ajax_url,
+                    'page_id': page_id,
+                    'room_id': room_id,
+                    'semester_id': semester_id,
+                    'ajax_url': ajax_url,
                 },
             )
 
-            if result.get("error"):
+            if result.get('error'):
                 print(
-                    f"    [error] Xior {prop['name']} room {room_id}: {result['error']}",
+                    f'    [error] Xior {prop["name"]} room {room_id}: {result["error"]}',
                     flush=True,
                 )
                 continue
 
-            if not result.get("success"):
+            if not result.get('success'):
                 continue
 
-            for unit in result.get("data", {}).get("units", []):
-                unit_id = _first_of(unit, ["apartmentId", "unit_id", "id", "UnitID"])
-                room_name = _first_of(unit, ["apartmentName", "unit_name", "room_name", "name"])
+            for unit in result.get('data', {}).get('units', []):
+                unit_id = _first_of(unit, ['apartmentId', 'unit_id', 'id', 'UnitID'])
+                room_name = _first_of(unit, ['apartmentName', 'unit_name', 'room_name', 'name'])
 
                 price = int(float(
-                    _first_of(unit, ["minimumRent", "rent", "price", "MinimumRent", "minRent"])
+                    _first_of(unit, ['minimumRent', 'rent', 'price', 'MinimumRent', 'minRent'])
                     or 0
                 ))
                 if not self._isPriceMatched(price):
                     continue
 
                 house_id = (
-                    f"xior-{unit_id}" if unit_id else f"xior-{building_name.lower()}-{room_id}"
+                    f'xior-{unit_id}' if unit_id else f'xior-{building_name.lower()}-{room_id}'
                 )
-                sqm = _first_of(unit, ["sqM", "sqm", "size_sqm", "area", "size", "SquareMeters"])
+                sqm = _first_of(unit, ['sqM', 'sqm', 'size_sqm', 'area', 'size', 'SquareMeters'])
 
                 houses.append(
                     House(
                         id=house_id,
-                        URL=prop["url"],
-                        address=f"{building_name} - {room_name}" if room_name else building_name,
+                        URL=prop['url'],
+                        address=f'{building_name} - {room_name}' if room_name else building_name,
                         price=price,
-                        living_area=f"{sqm} m\u00b2" if sqm else "",
+                        living_area=f'{sqm} m\u00b2' if sqm else '',
                     )
                 )
 

@@ -18,23 +18,22 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Install Playwright browsers
+      - name: Setup & Run Obscura Browser
         run: |
-          playwright install chromium
-          playwright install-deps chromium
+          mkdir -p "$HOME/.obscura/bin"
+          curl -sL https://github.com/h4ckf0r0day/obscura/releases/latest/download/obscura-x86_64-linux.tar.gz | tar -xz -C "$HOME/.obscura/bin"
+          chmod +x "$HOME/.obscura/bin/"*
+          echo "$HOME/.obscura/bin" >> $GITHUB_PATH
+          "$HOME/.obscura/bin/obscura" serve --port 9222 --stealth &
+          sleep 2
 
       - name: Run monitor
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          OBSCURA_CDP_URL: http://127.0.0.1:9222
         run: python main.py

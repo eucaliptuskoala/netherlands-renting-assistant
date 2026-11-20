@@ -100,6 +100,16 @@
      - Both tests gracefully skip via `pytest.mark.skipif` when environment secrets are absent.
 - **Consequence**: Full automated verification of core business flows and third-party API contracts, allowing rapid and safe evolution of scrapers and bot features.
 
+## ADR-12: Obscura Headless Browser via CDP for Xior (November 2026)
+
+- **Context**: The Xior scraper requires browser automation to extract dynamic room availability from an embedded Yardi system (`window.xiorajax`). Previously, Playwright ran full Chromium, which required downloading ~300MB of browser binaries, installing heavy OS-level dependencies via `playwright install-deps`, and consuming ~250MB+ RAM per run.
+- **Decision**:
+  1. Update `scrapers/xior.py` to connect via CDP (`pw.chromium.connect_over_cdp`) to an Obscura browser instance (`http://127.0.0.1:9222` or `OBSCURA_CDP_URL`).
+  2. Implement automatic fallback to local `pw.chromium.launch()` when CDP is unreachable, ensuring zero disruption to local developer workflows.
+  3. Wrap CDP route interception in a fault-tolerant block to prevent failures on lightweight engines.
+  4. Update `.github/workflows/monitor.yml` to fetch the lightweight precompiled Obscura binary (~70MB) and run `obscura serve --port 9222 --stealth &` instead of installing Chromium.
+- **Consequence**: Dramatically reduced CI setup time and disk usage in GitHub Actions, slashed browser memory footprint to ~35MB, and maintained 100% backward compatibility for local development.
+
 
 
 

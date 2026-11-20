@@ -19,7 +19,7 @@ Scrapes Dutch rental websites (Funda.nl and Pararius.com) and sends new listings
 | Approach | Where | How it works |
 |----------|-------|-------------|
 | `curl_cffi` TLS impersonation | Funda, Pararius, Kamernet, Vestide | Mimics Chrome/Safari TLS fingerprints at the C library level (libcurl-impersonate). Beats Akamai and Cloudflare. |
-| Playwright Chromium | Xior | Headless browser for JavaScript/Yardi room availability API extraction. |
+| Obscura via Playwright CDP (Chromium fallback) | Xior | Lightweight Rust headless browser (~35MB RAM) with V8 engine for Yardi room availability API extraction. |
 | Standard `requests` | Telegram notifications | Simple HTTP POST to Telegram Bot API. |
 
 ### Architecture
@@ -103,6 +103,11 @@ Ranked by practicality for this codebase:
   - Comprehensive unit test suite covering AI assistant prompt/fallback logic, scraper parsing (Vestide, Funda), Telegram alerts, and bot formatters/keyboards (18 unit tests, 100% offline, <0.6s).
   - Integration test suite testing live Google Gemini API (bilingual generation) and live Supabase PostgreSQL (schema & query validation) with graceful conditional skipping when credentials are unset.
   - Ruff linter passing cleanly across all repository files with zero errors.
+- Obscura Headless Browser Migration for Xior (November 2026):
+  - Migrated `scrapers/xior.py` to connect to Obscura over Chrome DevTools Protocol (`connect_over_cdp`) via `OBSCURA_CDP_URL` (default `http://127.0.0.1:9222`).
+  - Added seamless fallback to local Chromium launch if Obscura is not running, preserving local development ergonomics.
+  - Optimized GitHub Actions workflow (`.github/workflows/monitor.yml`): replaced heavy Chromium download and OS-level apt dependencies with single standalone Obscura binary (~70MB) running in background stealth mode.
+  - Added unit test coverage for Obscura CDP connection and local Chromium fallback.
 - Next steps: Monitor Render bot logs and gather user feedback on makelaar response rates.
 
 

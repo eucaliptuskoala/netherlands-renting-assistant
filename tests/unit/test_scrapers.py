@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scrapers import Funda, Vestide
+from scrapers import Funda, Vestide, Xior
 from scrapers.base import RentProviderInterface
 
 
@@ -101,3 +101,53 @@ def test_funda_handles_network_error():
         houses = funda.Run()
 
         assert houses == []
+
+
+@pytest.mark.unit
+def test_xior_connects_via_obscura_cdp():
+    mock_page = MagicMock()
+    mock_context = MagicMock()
+    mock_context.new_page.return_value = mock_page
+    mock_browser = MagicMock()
+    mock_browser.new_context.return_value = mock_context
+    mock_browser.contexts = [mock_context]
+
+    mock_pw = MagicMock()
+    mock_pw.chromium.connect_over_cdp.return_value = mock_browser
+
+    with patch('scrapers.xior.sync_playwright') as mock_sync_pw:
+        mock_sync_pw.return_value.__enter__.return_value = mock_pw
+
+        xior = Xior(city='eindhoven', price=[0, 9000], cdp_url='http://127.0.0.1:9222')
+        with patch.object(xior, '_scrape_property', return_value=[]):
+            houses = xior.Run()
+
+            mock_pw.chromium.connect_over_cdp.assert_called_once_with('http://127.0.0.1:9222')
+            mock_pw.chromium.launch.assert_not_called()
+            mock_page.close.assert_called_once()
+            mock_browser.close.assert_called_once()
+            assert houses == []
+
+
+@pytest.mark.unit
+def test_xior_fallback_to_local_chromium_on_cdp_failure():
+    mock_page = MagicMock()
+    mock_context = MagicMock()
+    mock_context.new_page.return_value = mock_page
+    mock_browser = MagicMock()
+    mock_browser.new_context.return_value = mock_context
+
+    mock_pw = MagicMock()
+    mock_pw.chromium.connect_over_cdp.side_effect = RuntimeError('Connection refused')
+    mock_pw.chromium.launch.return_value = mock_browser
+
+    with patch('scrapers.xior.sync_playwright') as mock_sync_pw:
+        mock_sync_pw.return_value.__enter__.return_value = mock_pw
+
+        xior = Xior(city='eindhoven', price=[0, 9000], cdp_url='http://127.0.0.1:9222')
+        with patch.object(xior, '_scrape_property', return_value=[]):
+            houses = xior.Run()
+
+            mock_pw.chromium.connect_over_cdp.assert_called_once_with('http://127.0.0.1:9222')
+            mock_pw.chromium.launch.assert_called_once()
+            assert houses == []
